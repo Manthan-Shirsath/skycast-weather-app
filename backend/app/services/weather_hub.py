@@ -308,6 +308,9 @@ class WeatherDataHub:
                 "windDirectionDeg": w_deg,
                 "pressure": round(current.get("surface_pressure", 1013)),
                 "provider": self.provider.provider_name,
+                "nwpSource": "gfs_seamless",
+                "nwpModel": "NOAA GFS (Global Forecast System)",
+                "modelSource": "gfs_seamless",
                 "updatedAt": now_iso,
                 "stale": False
             }
@@ -558,6 +561,8 @@ class WeatherDataHub:
         # 5. Freshness Meta
         freshness_meta = CanonicalFreshnessMeta(
             provider=self.provider.provider_name,
+            nwp_source="gfs_seamless",
+            nwp_model="NOAA GFS (Global Forecast System)",
             fetched_at=now_iso,
             observed_at=curr_raw.get("time", now_iso),
             stale=False,

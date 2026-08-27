@@ -6,7 +6,7 @@ load_dotenv("backend/.env")
 
 def verify_gemini_model():
     key = os.getenv("gemini_api_key") or os.getenv("GEMINI_API_KEY")
-    model_id = os.getenv("LLM_MODEL", "gemini-3.6-flash")
+    model_id = os.getenv("LLM_MODEL", "gemini-flash-latest")
     
     # Hide key security
     masked_key = key[:6] + "..." + key[-4:] if key and len(key) > 10 else "NOT_FOUND"

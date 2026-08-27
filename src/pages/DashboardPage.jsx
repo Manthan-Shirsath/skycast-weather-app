@@ -287,9 +287,9 @@ export function DashboardPage() {
               <Wind size={14} className="text-slate-200" />
               <span>{t('wind', 'Wind')}: <strong>{formatWind(city.windSpeedKmh)}</strong></span>
             </div>
-            <div className="home-hero-updated-chip">
+            <div className="home-hero-updated-chip" title="Numerical Weather Prediction: NOAA GFS via Open-Meteo">
               <Clock size={12} />
-              <span>{formattedUpdateTime}</span>
+              <span>{city.nwpModel ? `Powered by GFS • ${formattedUpdateTime}` : `Powered by GFS via Open-Meteo • ${formattedUpdateTime}`}</span>
             </div>
           </div>
         </div>

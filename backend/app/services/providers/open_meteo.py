@@ -32,11 +32,12 @@ class OpenMeteoProvider(BaseWeatherProvider):
         return results[0]
 
     async def fetch_forecast(self, lat: float, lon: float) -> Dict[str, Any]:
-        """Query Open-Meteo Forecast API for full current, hourly, and daily metrics."""
-        logger.info("🌐 [PROVIDER CALL] Open-Meteo Forecast for (%f, %f)", lat, lon)
+        """Query Open-Meteo Forecast API for full current, hourly, and daily metrics using explicit GFS NWP model."""
+        logger.info("🌐 [PROVIDER CALL] Open-Meteo GFS Forecast for (%f, %f)", lat, lon)
         url = (
             f"{FORECAST_API_URL}"
             f"?latitude={lat}&longitude={lon}"
+            f"&models=gfs_seamless"
             f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,surface_pressure,precipitation,cloud_cover,rain"
             f"&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,weather_code,surface_pressure,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m,uv_index"
             f"&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,precipitation_hours,sunrise,sunset,uv_index_max,wind_speed_10m_max,wind_gusts_10m_max"
@@ -49,14 +50,15 @@ class OpenMeteoProvider(BaseWeatherProvider):
             return res.json()
 
     async def fetch_batch_forecast(self, coords: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Batch query multiple coordinates in a single Open-Meteo request."""
-        logger.info("🌐 [PROVIDER CALL] Open-Meteo Multi-location batch (%d locations)", len(coords))
+        """Batch query multiple coordinates in a single Open-Meteo request using explicit GFS NWP model."""
+        logger.info("🌐 [PROVIDER CALL] Open-Meteo Multi-location GFS batch (%d locations)", len(coords))
         lats = ",".join(str(c["lat"]) for c in coords)
         lons = ",".join(str(c["lon"]) for c in coords)
 
         url = (
             f"{FORECAST_API_URL}"
             f"?latitude={lats}&longitude={lons}"
+            f"&models=gfs_seamless"
             f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,surface_pressure,precipitation,cloud_cover,rain"
             f"&daily=precipitation_probability_max,precipitation_sum,wind_gusts_10m_max"
             f"&timezone=auto"

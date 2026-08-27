@@ -1,0 +1,120 @@
+services:
+  # ============================================================================
+  # 1. FastAPI Weather Engine Backend
+  # ============================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: skycast-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # AI Model Configuration
+      - LLM_PROVIDER=google
+      - LLM_MODEL=gemini-flash-latest
+      - gemini_api_key=${gemini_api_key:-}
+      - gemini_api_key_fallback=${gemini_api_key_fallback:-}
+      # Database & Cache URLs (Wired to internal Docker network)
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/skycast_weather
+      - REDIS_URL=redis://redis:6379/0
+      # Optional External Keys
+      - GOOGLE_WEATHER_API_KEY=${GOOGLE_WEATHER_API_KEY:-}
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
+      # Cache TTLs & Collector Interval
+      - TTL_CURRENT_WEATHER=300
+      - TTL_MAP_WEATHER=300
+      - TTL_FORECAST=900
+      - TTL_RADAR_META=180
+      - TTL_ALERTS=600
+      - COLLECTOR_POLL_INTERVAL=180
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - skycast-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ============================================================================
+  # 2. React 19 + Nginx Production Frontend
+  # ============================================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: skycast-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - skycast-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # ============================================================================
+  # 3. PostgreSQL Database (Historical Observation Snapshots & Chat Sessions)
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: skycast-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=skycast_weather
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - skycast-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d skycast_weather"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # 4. Redis In-Memory Cache (Live Weather State & Cross-Instance Deduplication)
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: skycast-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - skycast-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+networks:
+  skycast-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local

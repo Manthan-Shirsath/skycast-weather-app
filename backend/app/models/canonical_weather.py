@@ -76,6 +76,8 @@ class CanonicalDailyItem(BaseModel):
 
 class CanonicalFreshnessMeta(BaseModel):
     provider: str = "open_meteo"
+    nwp_source: str = "gfs_seamless"
+    nwp_model: str = "NOAA GFS (Global Forecast System)"
     fetched_at: str
     observed_at: str
     stale: bool = False
@@ -174,6 +176,9 @@ class CanonicalWeatherDataset(BaseModel):
                 for d in self.daily
             ],
             "provider": self.freshness.provider,
+            "nwpSource": self.freshness.nwp_source,
+            "nwpModel": self.freshness.nwp_model,
+            "modelSource": self.freshness.nwp_source,
             "fetchedAt": self.freshness.fetched_at,
             "observedAt": self.freshness.observed_at,
             "stale": self.freshness.stale,

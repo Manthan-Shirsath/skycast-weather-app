@@ -17,7 +17,7 @@ load_dotenv("backend/.env")
 logger = logging.getLogger("skycast.gemini")
 
 GEMINI_API_KEY = os.getenv("gemini_api_key") or os.getenv("GEMINI_API_KEY", "")
-DEFAULT_MODEL = os.getenv("LLM_MODEL", "gemini-3.6-flash")
+DEFAULT_MODEL = os.getenv("LLM_MODEL", "gemini-flash-latest")
 
 SYSTEM_INSTRUCTION = """You are WeatherGPT, the intelligent meteorological conversational assistant for the Skycast Weather application.
 
@@ -95,10 +95,10 @@ class GeminiWeatherService:
             }
         }
 
-        configured_model = os.getenv("LLM_MODEL") or self.model or "gemini-3.6-flash"
+        configured_model = os.getenv("LLM_MODEL") or self.model or "gemini-flash-latest"
         
         # Primary configured model with fallback models if deprecated/retired
-        models_to_try = [configured_model, "gemini-3.6-flash", "gemini-flash-latest"]
+        models_to_try = [configured_model, "gemini-flash-latest", "gemini-3.5-flash"]
         unique_models = []
         for m in models_to_try:
             if m and m not in unique_models:

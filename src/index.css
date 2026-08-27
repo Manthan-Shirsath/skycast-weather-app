@@ -31,15 +31,15 @@ body {
   min-height: 100vh;
   display: flex;
   justify-content: center;
-  align-items: center;
-  padding: 24px;
+  align-items: flex-start;
+  padding: clamp(16px, 2vw, 32px);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
   width: 100%;
-  max-width: 1200px;
+  max-width: clamp(1200px, 94vw, 1680px);
   display: flex;
   justify-content: center;
 }

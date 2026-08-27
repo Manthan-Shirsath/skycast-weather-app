@@ -38,7 +38,7 @@ logger = logging.getLogger("skycast.agent")
 
 GEMINI_API_KEY = os.getenv("gemini_api_key") or os.getenv("GEMINI_API_KEY", "")
 GEMINI_API_KEY_FALLBACK = os.getenv("gemini_api_key_fallback") or os.getenv("GEMINI_API_KEY_FALLBACK", "")
-DEFAULT_MODEL = os.getenv("LLM_MODEL", "gemini-3.6-flash")
+DEFAULT_MODEL = os.getenv("LLM_MODEL", "gemini-flash-latest")
 MAX_TOOL_CALLS = int(os.getenv("MAX_TOOL_CALLS", "8"))
 
 
@@ -57,6 +57,12 @@ class WeatherGPTAgent:
         self.api_key_fallback = GEMINI_API_KEY_FALLBACK
         self.model = DEFAULT_MODEL if model is None else model
         self.max_tool_calls = max_tool_calls
+        logger.info(
+            "🤖 [INIT] WeatherGPT Agent initialized with model: '%s' (max_tool_calls=%d, api_key_configured=%s)",
+            self.model,
+            self.max_tool_calls,
+            bool(self.api_key and len(self.api_key) > 10)
+        )
 
     async def run(
         self,
@@ -211,8 +217,8 @@ class WeatherGPTAgent:
             }
         }
 
-        configured_model = os.getenv("LLM_MODEL") or self.model or "gemini-3.6-flash"
-        models_to_try = [configured_model, "gemini-3.6-flash", "gemini-flash-latest"]
+        configured_model = os.getenv("LLM_MODEL") or self.model or "gemini-flash-latest"
+        models_to_try = [configured_model, "gemini-flash-latest", "gemini-3.5-flash"]
         unique_models = []
         for m in models_to_try:
             if m and m not in unique_models:

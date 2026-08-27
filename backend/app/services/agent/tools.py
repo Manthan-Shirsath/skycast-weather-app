@@ -77,6 +77,8 @@ async def get_current_weather_tool(args: CurrentWeatherArgs) -> Dict[str, Any]:
             "pressure_hpa": data.get("pressure"),
             "stale": data.get("stale", False),
             "observed_at": data.get("updatedAt"),
+            "nwp_model": data.get("nwpModel", "NOAA GFS (Global Forecast System)"),
+            "nwp_source": data.get("nwpSource", "gfs_seamless"),
             "source": "central_weather_hub"
         }
 
@@ -105,6 +107,8 @@ async def get_current_weather_tool(args: CurrentWeatherArgs) -> Dict[str, Any]:
         "cloud_cover_pct": details.get("cloudCoverPct", 40),
         "stale": data.get("stale", False),
         "observed_at": data.get("observedAt", data.get("fetchedAt")),
+        "nwp_model": data.get("nwpModel", "NOAA GFS (Global Forecast System)"),
+        "nwp_source": data.get("nwpSource", "gfs_seamless"),
         "source": "central_weather_hub"
     }
 
@@ -155,6 +159,8 @@ async def get_forecast_tool(args: ForecastArgs) -> Dict[str, Any]:
         "daily_forecast": daily_summary,
         "hourly_forecast": hourly_summary,
         "stale": data.get("stale", False),
+        "nwp_model": data.get("nwpModel", "NOAA GFS (Global Forecast System)"),
+        "nwp_source": data.get("nwpSource", "gfs_seamless"),
         "source": "central_weather_hub"
     }
 

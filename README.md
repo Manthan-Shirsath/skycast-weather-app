@@ -114,6 +114,22 @@ npm run dev
   ```
   Frontend runs at: `http://localhost:5173`
 
+### Option C: Run with Docker (Containerized Stack)
+Build and run the entire full stack (FastAPI Backend, React 19 Production Nginx Server, PostgreSQL, and Redis) with a single command:
+```bash
+docker compose up --build
+```
+- **React Frontend (Production Nginx)**: `http://localhost:5173` (or `http://localhost:80`)
+- **FastAPI Backend**: `http://localhost:8000`
+- **FastAPI Swagger Docs**: `http://localhost:8000/docs`
+- **PostgreSQL Database**: `localhost:5432`
+- **Redis Cache**: `localhost:6379`
+
+To stop all services:
+```bash
+docker compose down
+```
+
 ---
 
 ## 🧪 Testing & Linting

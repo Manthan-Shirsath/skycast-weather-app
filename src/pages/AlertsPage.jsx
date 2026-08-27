@@ -19,21 +19,17 @@ import {
   CloudRain,
   Zap,
   Eye,
-  Building2,
   Clock,
   Radio,
   RefreshCw,
   HelpCircle,
   Shield,
-  Layers,
-  Thermometer,
-  Droplets,
   Calendar
 } from 'lucide-react';
 
 const MAJOR_INDIAN_CITIES = [
   'Pune', 'Mumbai', 'New Delhi', 'Bengaluru', 'Kolkata', 'Chennai',
-  'Hyderabad', 'Ahmedabad', 'Jaipur', 'Lucknow', 'Srinagar', 'Shimla', 'Guwahati'
+  'Hyderabad', 'Ahmedabad', 'Jaipur', 'Lucknow', 'Srinagar', 'Shimla', 'Guwahati', 'Nashik'
 ];
 
 export function AlertsPage() {
@@ -162,41 +158,30 @@ export function AlertsPage() {
     return CheckCircle2;
   };
 
-  const getRiskBadgeStyles = (color = 'green') => {
-    switch (color.toLowerCase()) {
+  const getRiskMeta = (color = 'green') => {
+    const c = (color || 'green').toLowerCase();
+    switch (c) {
       case 'red':
         return {
-          bg: 'bg-rose-950/80 border-rose-600/80 text-rose-300',
-          badge: 'bg-rose-600 text-white',
-          glow: 'shadow-rose-900/30 border-rose-500/60',
-          pill: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+          classColor: 'red',
           text: 'Red — Take Action',
           symbol: '🔴'
         };
       case 'orange':
         return {
-          bg: 'bg-amber-950/80 border-amber-600/80 text-amber-300',
-          badge: 'bg-amber-600 text-white',
-          glow: 'shadow-amber-900/30 border-amber-500/60',
-          pill: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+          classColor: 'orange',
           text: 'Orange — Be Prepared',
           symbol: '🟠'
         };
       case 'yellow':
         return {
-          bg: 'bg-yellow-950/80 border-yellow-600/80 text-yellow-300',
-          badge: 'bg-yellow-600 text-slate-950 font-bold',
-          glow: 'shadow-yellow-900/30 border-yellow-500/60',
-          pill: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40',
+          classColor: 'yellow',
           text: 'Yellow — Be Updated',
           symbol: '🟡'
         };
       default:
         return {
-          bg: 'bg-emerald-950/60 border-emerald-700/60 text-emerald-300',
-          badge: 'bg-emerald-600 text-white',
-          glow: 'shadow-emerald-900/20 border-emerald-500/40',
-          pill: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+          classColor: 'green',
           text: 'Green — Normal / No Action',
           symbol: '🟢'
         };
@@ -206,57 +191,63 @@ export function AlertsPage() {
   const isStale = weatherData?.stale;
 
   return (
-    <div className="alerts-page-container max-w-7xl mx-auto px-4 py-6 space-y-6">
+    <div className="alerts-page-container">
       
-      {/* 1. Header & Official Branding */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-md">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      {/* 1. Header & Official Branding Card */}
+      <div className="alerts-header-card">
+        <div className="alerts-header-top">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black tracking-wider uppercase bg-amber-500/10 text-amber-400 border border-amber-500/30">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <span className="alerts-badge-brand">
                 ⚡ SKYCAST WEATHER RISK
               </span>
-              <span className="text-xs text-slate-400 font-medium">
+              <span className="alerts-framework-sub">
                 Rules based on published IMD warning criteria/framework
               </span>
             </div>
-            <h1 className="text-3xl font-black tracking-tight text-white flex items-center gap-3">
-              Weather Alerts
-              <span className="text-sm font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+            <div className="alerts-title-row">
+              <h1 className="alerts-main-title">
+                Weather Alerts
+              </h1>
+              <span className="alerts-badge-pill">
                 Risk Center
               </span>
-            </h1>
-            <p className="text-sm text-slate-400 mt-1">
-              Real-time weather risks based on Skycast analysis.
+            </div>
+            <p style={{ fontSize: '13px', color: '#94A3B8', margin: '4px 0 0 0' }}>
+              Real-time weather risks based on Skycast meteorological analysis.
             </p>
           </div>
 
           {/* City Selector Dropdown */}
-          <div className="relative">
+          <div style={{ position: 'relative' }}>
             <button
+              type="button"
               onClick={() => setIsCityDropdownOpen(!isCityDropdownOpen)}
-              className="w-full md:w-64 flex items-center justify-between px-4 py-2.5 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-xl text-white font-medium shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-sky-500"
+              className="alerts-city-dropdown-btn"
             >
-              <div className="flex items-center gap-2 truncate">
-                <MapPin size={16} className="text-sky-400 shrink-0" />
-                <span className="truncate">{alertsData?.displayLocation || cityParam}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                <MapPin size={16} color="#38BDF8" style={{ flexShrink: 0 }} />
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {alertsData?.displayLocation || cityParam}
+                </span>
               </div>
-              <ChevronDown size={16} className={`text-slate-400 transition-transform ${isCityDropdownOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown size={16} color="#94A3B8" style={{ transform: isCityDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
             </button>
 
             {isCityDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-full md:w-64 max-h-60 overflow-y-auto bg-slate-850 border border-slate-700 rounded-xl shadow-2xl z-50 py-1">
-                <div className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-750">
+              <div className="alerts-city-menu">
+                <div style={{ padding: '6px 10px', fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Select Location
                 </div>
                 {MAJOR_INDIAN_CITIES.map(c => (
                   <button
                     key={c}
+                    type="button"
                     onClick={() => handleCitySelect(c)}
-                    className={`w-full text-left px-3.5 py-2 text-sm flex items-center justify-between hover:bg-slate-750 transition-colors ${c.toLowerCase() === cityParam.toLowerCase() ? 'text-sky-400 font-semibold bg-sky-950/40' : 'text-slate-200'}`}
+                    className={`alerts-city-item ${c.toLowerCase() === cityParam.toLowerCase() ? 'active' : ''}`}
                   >
                     <span>{c}</span>
-                    {c.toLowerCase() === cityParam.toLowerCase() && <CheckCircle2 size={14} className="text-sky-400" />}
+                    {c.toLowerCase() === cityParam.toLowerCase() && <CheckCircle2 size={14} color="#38BDF8" />}
                   </button>
                 ))}
               </div>
@@ -265,17 +256,17 @@ export function AlertsPage() {
         </div>
 
         {/* Mandatory Transparency Notice */}
-        <div className="mt-4 pt-4 border-t border-slate-800/80 flex items-start gap-2.5 text-xs text-slate-400">
-          <Info size={15} className="text-sky-400 shrink-0 mt-0.5" />
+        <div className="alerts-transparency-banner">
+          <Info size={16} color="#38BDF8" style={{ flexShrink: 0, marginTop: '2px' }} />
           <span>
-            <strong className="text-slate-300">Transparency Notice:</strong> Skycast assessments are derived algorithmic risk evaluations based on published IMD meteorological criteria. Skycast assessments are <strong>not official IMD warnings</strong>.
+            <strong style={{ color: '#E2E8F0' }}>Transparency Notice:</strong> Skycast assessments are derived algorithmic risk evaluations based on published IMD meteorological criteria. Skycast assessments are <strong>not official IMD warnings</strong>.
           </span>
         </div>
 
         {/* Stale Data Notice */}
         {isStale && (
-          <div className="mt-3 p-2.5 rounded-lg bg-amber-950/60 border border-amber-700/60 flex items-center gap-2 text-xs text-amber-300">
-            <Clock size={14} className="text-amber-400 shrink-0" />
+          <div style={{ marginTop: '12px', padding: '10px 14px', borderRadius: '10px', background: 'rgba(120, 53, 15, 0.4)', border: '1px solid rgba(245, 158, 11, 0.3)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#FCD34D' }}>
+            <Clock size={14} color="#F59E0B" />
             <span>Weather data may be outdated. Last updated: {new Date(alertsData?.updatedAt || Date.now()).toLocaleTimeString()}</span>
           </div>
         )}
@@ -283,187 +274,189 @@ export function AlertsPage() {
 
       {/* Error state */}
       {errorMsg && (
-        <div className="p-4 rounded-xl bg-rose-950/70 border border-rose-700/60 text-rose-200 text-sm flex items-center gap-3">
-          <AlertOctagon size={18} className="text-rose-400 shrink-0" />
+        <div style={{ padding: '14px 18px', borderRadius: '12px', background: 'rgba(159, 18, 57, 0.4)', border: '1px solid rgba(244, 63, 94, 0.4)', color: '#FECDD3', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <AlertOctagon size={18} color="#F43F5E" />
           <span>{errorMsg}</span>
         </div>
       )}
 
       {/* Loading state */}
       {isLoading && !alertsData && (
-        <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
-          <RefreshCw size={24} className="animate-spin text-sky-400" />
-          <span>Evaluating real-time weather risk for {cityParam}...</span>
+        <div style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+          <RefreshCw size={28} className="animate-spin" color="#38BDF8" />
+          <span style={{ fontSize: '14px' }}>Evaluating real-time weather risk for {cityParam}...</span>
         </div>
       )}
 
       {/* 2. Prominent Highest Active Risk Hero Card */}
       {highestRiskAlert ? (
-        <div className={`p-6 rounded-2xl border ${getRiskBadgeStyles(highestRiskAlert.skycastRiskColour).bg} ${getRiskBadgeStyles(highestRiskAlert.skycastRiskColour).glow} shadow-2xl backdrop-blur-md transition-all`}>
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`px-3 py-1 rounded-full text-xs font-black tracking-wider uppercase ${getRiskBadgeStyles(highestRiskAlert.skycastRiskColour).badge}`}>
-                  {getRiskBadgeStyles(highestRiskAlert.skycastRiskColour).symbol} {highestRiskAlert.skycastRiskLevel.toUpperCase()}
+        <div className={`risk-hero-card ${getRiskMeta(highestRiskAlert.skycastRiskColour).classColor}`}>
+          <div className="risk-hero-layout">
+            <div className="risk-hero-main">
+              <div className="risk-badges-row">
+                <span className={`risk-pill-badge ${getRiskMeta(highestRiskAlert.skycastRiskColour).classColor}`}>
+                  {getRiskMeta(highestRiskAlert.skycastRiskColour).symbol} {highestRiskAlert.skycastRiskLevel.toUpperCase()}
                 </span>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-900/80 text-white border border-slate-700">
+                <span style={{ padding: '3px 10px', borderRadius: '9999px', fontSize: '11px', fontWeight: '700', background: 'rgba(15, 23, 42, 0.8)', color: '#FFFFFF', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
                   {highestRiskAlert.actionDirective.toUpperCase()}
                 </span>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-900/70 text-slate-300 border border-slate-700/80">
+                <span style={{ padding: '3px 10px', borderRadius: '9999px', fontSize: '11px', fontWeight: '500', background: 'rgba(15, 23, 42, 0.6)', color: '#CBD5E1', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
                   Basis: {highestRiskAlert.basis ? highestRiskAlert.basis.toUpperCase() : 'FORECAST'}
                 </span>
-                <span className="text-xs text-slate-300">
+                <span style={{ fontSize: '12px', color: '#CBD5E1' }}>
                   Valid: {highestRiskAlert.forecastWindow === 'next_24h' ? 'Next 24 hours' : 'Next 3 hours'}
                 </span>
               </div>
 
               <div>
-                <h2 className="text-2xl lg:text-3xl font-black text-white tracking-tight flex items-center gap-2">
+                <h2 className="risk-hero-title">
                   {highestRiskAlert.hazardClassification.replace(/_/g, ' ').toUpperCase()}
-                  <span className="text-base font-medium text-slate-300">in {alertsData?.displayLocation || cityParam}</span>
+                  <span style={{ fontSize: '16px', fontWeight: '500', color: '#CBD5E1', marginLeft: '8px' }}>in {alertsData?.displayLocation || cityParam}</span>
                 </h2>
-                <p className="text-slate-300 text-sm mt-1">
-                  Measured / Forecast: <strong className="text-white">{highestRiskAlert.measuredValue} {highestRiskAlert.unit}</strong>
+                <p className="risk-hero-desc">
+                  Measured / Forecast: <strong style={{ color: '#FFFFFF' }}>{highestRiskAlert.measuredValue} {highestRiskAlert.unit}</strong>
                   {highestRiskAlert.threshold && (
-                    <span className="ml-2 text-slate-400">(Threshold: {highestRiskAlert.threshold} {highestRiskAlert.unit})</span>
+                    <span style={{ marginLeft: '8px', color: '#94A3B8' }}>(Threshold: {highestRiskAlert.threshold} {highestRiskAlert.unit})</span>
                   )}
                 </p>
               </div>
             </div>
 
             {/* Action Buttons */}
-            <div className="flex flex-wrap lg:flex-col gap-2 shrink-0">
+            <div className="risk-actions-group">
               <button
+                type="button"
                 onClick={() => navigate(`/map?city=${encodeURIComponent(cityParam)}`)}
-                className="px-4 py-2 bg-slate-900/90 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center gap-2 border border-slate-700 transition-colors shadow-sm"
+                className="risk-action-btn-secondary"
               >
-                <Map size={14} className="text-sky-400" />
-                View on Map
+                <Map size={14} color="#38BDF8" />
+                <span>View on Map</span>
               </button>
               <button
+                type="button"
                 onClick={() => navigate(`/details?city=${encodeURIComponent(cityParam)}`)}
-                className="px-4 py-2 bg-slate-900/90 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center gap-2 border border-slate-700 transition-colors shadow-sm"
+                className="risk-action-btn-secondary"
               >
-                <Compass size={14} className="text-emerald-400" />
-                View Weather
+                <Compass size={14} color="#34D399" />
+                <span>View Weather</span>
               </button>
               <button
+                type="button"
                 onClick={() => navigate(`/weathergpt?city=${encodeURIComponent(cityParam)}`)}
-                className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors shadow-md"
+                className="risk-action-btn-primary"
               >
                 <MessageSquare size={14} />
-                Ask WeatherGPT
+                <span>Ask WeatherGPT</span>
               </button>
             </div>
           </div>
 
           {/* Explicit Visual Distinction: IMD Classification vs Skycast Risk */}
-          <div className="mt-6 pt-5 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.1)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+            <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+              <span style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
                 IMD Hazard Classification
               </span>
-              <p className="text-base font-bold text-white">
+              <p style={{ fontSize: '15px', fontWeight: '800', color: '#FFFFFF', margin: '0 0 2px 0' }}>
                 {highestRiskAlert.hazardClassification.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
               </p>
-              <span className="text-[11px] text-slate-400">Physical meteorological category defined by IMD criteria.</span>
+              <span style={{ fontSize: '11px', color: '#64748B' }}>Physical meteorological category defined by IMD criteria.</span>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+            <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+              <span style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
                 Skycast Assessment
               </span>
-              <p className="text-base font-bold text-white flex items-center gap-1.5">
-                <span>{getRiskBadgeStyles(highestRiskAlert.skycastRiskColour).symbol}</span>
+              <p style={{ fontSize: '15px', fontWeight: '800', color: '#FFFFFF', margin: '0 0 2px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>{getRiskMeta(highestRiskAlert.skycastRiskColour).symbol}</span>
                 <span>{highestRiskAlert.skycastRiskLevel.toUpperCase()} — {highestRiskAlert.actionDirective}</span>
               </p>
-              <span className="text-[11px] text-slate-400">Derived computational risk based on location profile ({alertsData?.locationProfile || 'urban'}).</span>
+              <span style={{ fontSize: '11px', color: '#64748B' }}>Derived computational risk based on location profile ({alertsData?.locationProfile || 'urban'}).</span>
             </div>
           </div>
         </div>
       ) : (
         /* 3. Green State (No Active Weather Risks) */
-        <div className="p-6 rounded-2xl bg-emerald-950/40 border border-emerald-700/50 shadow-xl backdrop-blur-md">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="px-3 py-1 rounded-full text-xs font-black tracking-wider uppercase bg-emerald-600 text-white">
+        <div className="risk-hero-card green">
+          <div className="risk-hero-layout">
+            <div className="risk-hero-main">
+              <div className="risk-badges-row">
+                <span className="risk-pill-badge green">
                   🟢 GREEN — NO ACTIVE WEATHER RISKS
                 </span>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-900/80 text-emerald-300 border border-emerald-800/40">
+                <span style={{ padding: '3px 10px', borderRadius: '9999px', fontSize: '11px', fontWeight: '600', background: 'rgba(15, 23, 42, 0.7)', color: '#A7F3D0', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
                   Normal Conditions
                 </span>
               </div>
-              <h2 className="text-2xl font-black text-white">
+              <h2 className="risk-hero-title">
                 {alertsData?.displayLocation || cityParam} currently has no detected Skycast weather risks.
               </h2>
-              <p className="text-sm text-slate-300">
+              <p className="risk-hero-desc">
                 All evaluated meteorological parameters (rainfall, squall wind, heat, cold, fog) are within normal seasonal range.
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="risk-actions-group">
               <button
+                type="button"
                 onClick={() => navigate(`/details?city=${encodeURIComponent(cityParam)}`)}
-                className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center gap-2 border border-slate-700 transition-colors"
+                className="risk-action-btn-secondary"
               >
-                <Compass size={14} className="text-emerald-400" />
-                View Weather Details
+                <Compass size={14} color="#34D399" />
+                <span>View Weather Details</span>
               </button>
               <button
+                type="button"
                 onClick={() => navigate(`/weathergpt?city=${encodeURIComponent(cityParam)}`)}
-                className="px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors"
+                className="risk-action-btn-primary"
               >
                 <MessageSquare size={14} />
-                Ask WeatherGPT
+                <span>Ask WeatherGPT</span>
               </button>
             </div>
           </div>
 
           {/* Current Live Overview snapshot */}
           {weatherData && (
-            <div className="mt-6 pt-5 border-t border-emerald-800/30 grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80">
-                <span className="text-xs text-slate-400 block mb-1">Temperature</span>
-                <p className="text-lg font-bold text-white">{weatherData.tempC}°C</p>
-                <span className="text-xs text-slate-400">Feels {weatherData.feelsLikeC || weatherData.tempC}°C</span>
+            <div className="risk-stats-overview">
+              <div className="risk-overview-box">
+                <span className="risk-overview-label">Temperature</span>
+                <p className="risk-overview-val">{weatherData.tempC}°C</p>
+                <span className="risk-overview-sub">Feels {weatherData.feelsLikeC || weatherData.tempC}°C</span>
               </div>
-              <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80">
-                <span className="text-xs text-slate-400 block mb-1">Condition</span>
-                <p className="text-lg font-bold text-white truncate">{weatherData.condition}</p>
-                <span className="text-xs text-slate-400">{weatherData.insight?.summary || 'Stable'}</span>
+              <div className="risk-overview-box">
+                <span className="risk-overview-label">Condition</span>
+                <p className="risk-overview-val" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{weatherData.condition}</p>
+                <span className="risk-overview-sub">{weatherData.insight?.summary || 'Stable'}</span>
               </div>
-              <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80">
-                <span className="text-xs text-slate-400 block mb-1">Humidity</span>
-                <p className="text-lg font-bold text-white">{weatherData.humidity}%</p>
-                <span className="text-xs text-slate-400">Wind {weatherData.windSpeedKmh} km/h</span>
+              <div className="risk-overview-box">
+                <span className="risk-overview-label">Humidity</span>
+                <p className="risk-overview-val">{weatherData.humidity}%</p>
+                <span className="risk-overview-sub">Wind {weatherData.windSpeedKmh} km/h</span>
               </div>
-              <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80">
-                <span className="text-xs text-slate-400 block mb-1">Rain Probability</span>
-                <p className="text-lg font-bold text-white">{weatherData.insight?.rainChance || 0}%</p>
-                <span className="text-xs text-slate-400">Next 24h</span>
+              <div className="risk-overview-box">
+                <span className="risk-overview-label">Rain Probability</span>
+                <p className="risk-overview-val">{weatherData.insight?.rainChance || 0}%</p>
+                <span className="risk-overview-sub">Next 24h</span>
               </div>
             </div>
           )}
 
-          <div className="mt-4 text-[11px] text-slate-400 italic">
+          <div style={{ marginTop: '14px', fontSize: '11px', color: '#94A3B8', fontStyle: 'italic' }}>
             * Note: No active Skycast risk does not mean no danger whatsoever. Always stay updated during rapidly developing localized conditions.
           </div>
         </div>
       )}
 
       {/* 4. Filter Tabs for All Hazards */}
-      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+      <div className="alerts-filter-bar">
+        <div className="alerts-filter-list">
           {['All', 'Red', 'Orange', 'Yellow', 'Green'].map(tab => (
             <button
               key={tab}
+              type="button"
               onClick={() => setActiveTab(tab)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 ${
-                activeTab === tab
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
+              className={`alerts-filter-pill-btn ${activeTab === tab ? 'active' : ''}`}
             >
               {tab === 'All' && 'All Hazard Cards'}
               {tab === 'Red' && '🔴 Red (Action)'}
@@ -473,103 +466,106 @@ export function AlertsPage() {
             </button>
           ))}
         </div>
-        <span className="text-xs text-slate-400 shrink-0">
+        <span style={{ fontSize: '12px', color: '#94A3B8' }}>
           Showing {filteredAlerts.length} item{filteredAlerts.length === 1 ? '' : 's'}
         </span>
       </div>
 
       {/* 5. All Active Hazard Cards List with Expandable "Why?" */}
-      <div className="space-y-4">
+      <div className="alerts-cards-stack">
         {filteredAlerts.map(alert => {
           const Icon = getHazardIcon(alert.hazard, alert.skycastRiskColour);
-          const style = getRiskBadgeStyles(alert.skycastRiskColour);
+          const meta = getRiskMeta(alert.skycastRiskColour);
           const isExpanded = !!expandedAlerts[alert.id];
 
           return (
             <div
               key={alert.id}
-              className={`rounded-2xl border ${style.bg} overflow-hidden shadow-lg transition-all`}
+              className="alert-item-card"
             >
-              <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-start gap-4">
-                  <div className={`p-3 rounded-xl ${style.badge} shrink-0 mt-1`}>
+              <div className="alert-item-header">
+                <div className="alert-item-left">
+                  <div className={`alert-item-icon-box ${meta.classColor}`}>
                     <Icon size={22} />
                   </div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${style.pill}`}>
-                        {style.symbol} {alert.skycastRiskLevel?.toUpperCase()} — {alert.actionDirective}
+                  <div className="alert-item-content">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                      <span className={`risk-pill-badge ${meta.classColor}`}>
+                        {meta.symbol} {alert.skycastRiskLevel?.toUpperCase()} — {alert.actionDirective}
                       </span>
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-900/80 text-slate-300 border border-slate-700">
+                      <span style={{ padding: '2px 8px', borderRadius: '9999px', fontSize: '11px', fontWeight: '600', background: 'rgba(15, 23, 42, 0.8)', color: '#CBD5E1', border: '1px solid rgba(255, 255, 255, 0.15)' }}>
                         {alert.basis ? alert.basis.toUpperCase() : 'FORECAST'}
                       </span>
                       {alert.locationProfile && (
-                        <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-900/60 text-slate-400 border border-slate-800">
+                        <span style={{ padding: '2px 8px', borderRadius: '9999px', fontSize: '11px', fontWeight: '500', background: 'rgba(15, 23, 42, 0.6)', color: '#94A3B8', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
                           Profile: {alert.locationProfile.toUpperCase()}
                         </span>
                       )}
                     </div>
-                    <h3 className="text-lg font-bold text-white">
+                    <h3 className="alert-item-title">
                       {alert.title}
                     </h3>
-                    <p className="text-xs text-slate-300 mt-0.5">
+                    <p className="alert-item-desc">
                       {alert.explanation}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                <div className="alert-item-actions">
                   <button
+                    type="button"
                     onClick={() => toggleExpand(alert.id)}
-                    className="px-3.5 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors"
+                    className="alert-why-toggle-btn"
                   >
                     <span>Why is this active?</span>
                     {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                   </button>
                   <button
+                    type="button"
                     onClick={() => navigate(`/map?city=${encodeURIComponent(cityParam)}`)}
-                    className="p-2 bg-slate-900/90 hover:bg-slate-800 text-sky-400 rounded-xl border border-slate-700 transition-colors"
+                    className="risk-action-btn-secondary"
+                    style={{ padding: '8px 10px' }}
                     title="View on Map"
                   >
-                    <Map size={15} />
+                    <Map size={15} color="#38BDF8" />
                   </button>
                 </div>
               </div>
 
               {/* Expandable "Why?" and Limitations Section */}
               {isExpanded && (
-                <div className="p-5 bg-slate-950/80 border-t border-slate-800/80 space-y-4 text-xs">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <h4 className="font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
-                        <HelpCircle size={13} className="text-sky-400" />
-                        Triggering Meteorological Metrics
-                      </h4>
-                      <ul className="space-y-1.5 text-slate-300 list-disc list-inside">
+                <div className="alert-item-drawer">
+                  <div className="alert-drawer-cols">
+                    <div>
+                      <div className="alert-drawer-section-title">
+                        <HelpCircle size={14} color="#38BDF8" />
+                        <span>Triggering Meteorological Metrics</span>
+                      </div>
+                      <ul className="alert-drawer-list">
                         <li>
-                          Measured/Forecast Value: <strong className="text-white">{alert.measuredValue} {alert.unit}</strong>
+                          Measured/Forecast Value: <strong style={{ color: '#FFFFFF' }}>{alert.measuredValue} {alert.unit}</strong>
                         </li>
                         <li>
-                          Applicable Threshold: <strong className="text-white">{alert.threshold || 'N/A'} {alert.unit}</strong>
+                          Applicable Threshold: <strong style={{ color: '#FFFFFF' }}>{alert.threshold || 'N/A'} {alert.unit}</strong>
                         </li>
                         <li>
-                          IMD Hazard Classification: <strong className="text-white">{alert.hazardClassification?.replace(/_/g, ' ')}</strong>
+                          IMD Hazard Classification: <strong style={{ color: '#FFFFFF' }}>{alert.hazardClassification?.replace(/_/g, ' ')}</strong>
                         </li>
                         <li>
-                          Location Profile: <strong className="text-white">{alert.locationProfile}</strong>
+                          Location Profile: <strong style={{ color: '#FFFFFF' }}>{alert.locationProfile}</strong>
                         </li>
                         <li>
-                          Rule Framework: <strong className="text-white">{alert.ruleBasis}</strong>
+                          Rule Framework: <strong style={{ color: '#FFFFFF' }}>{alert.ruleBasis}</strong>
                         </li>
                       </ul>
                     </div>
 
-                    <div className="space-y-2">
-                      <h4 className="font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
-                        <Shield size={13} className="text-amber-400" />
-                        Known Meteorological Limitations
-                      </h4>
-                      <ul className="space-y-1.5 text-slate-300 list-disc list-inside">
+                    <div>
+                      <div className="alert-drawer-section-title">
+                        <Shield size={14} color="#F59E0B" />
+                        <span>Known Meteorological Limitations</span>
+                      </div>
+                      <ul className="alert-drawer-list">
                         {(alert.limitations || ['General numerical model resolution limitations apply.']).map((lim, i) => (
                           <li key={i}>{lim}</li>
                         ))}
@@ -577,9 +573,9 @@ export function AlertsPage() {
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-slate-400 text-[11px]">
+                  <div className="alert-drawer-footer">
                     <span>Valid from: {new Date(alert.validFrom || Date.now()).toLocaleTimeString()} to {new Date(alert.validUntil || Date.now() + 86400000).toLocaleTimeString()}</span>
-                    <span className="italic">Derived Skycast assessment • Not an official government warning</span>
+                    <span style={{ fontStyle: 'italic' }}>Derived Skycast assessment • Not an official government warning</span>
                   </div>
                 </div>
               )}
@@ -589,66 +585,66 @@ export function AlertsPage() {
       </div>
 
       {/* 6. Upcoming Forecast Risks Section (Days 1–5) */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-md space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="upcoming-risks-container">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-sky-500/10 text-sky-400 border border-sky-500/30">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ padding: '2px 8px', borderRadius: '9999px', fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px', background: 'rgba(56, 189, 248, 0.15)', color: '#38BDF8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
                 FORECAST
               </span>
-              <h3 className="text-lg font-black text-white tracking-tight">Upcoming Risks</h3>
+              <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#FFFFFF', margin: 0, letterSpacing: '-0.3px' }}>Upcoming Risks</h3>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p style={{ fontSize: '12px', color: '#94A3B8', margin: '4px 0 0 0' }}>
               Forecast weather hazards evaluated from multi-day NWP numerical model projections.
             </p>
           </div>
-          <Calendar size={18} className="text-slate-500" />
+          <Calendar size={20} color="#64748B" />
         </div>
 
         {upcomingRisks.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="upcoming-risks-grid">
             {upcomingRisks.map(up => {
-              const style = getRiskBadgeStyles(up.skycastRiskColour);
+              const meta = getRiskMeta(up.skycastRiskColour);
               return (
                 <div
                   key={up.id}
-                  className={`p-4 rounded-xl border ${style.bg} space-y-2`}
+                  className={`upcoming-risk-card ${meta.classColor}`}
                 >
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-white">{up.day} ({up.timeWindow})</span>
-                    <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${style.badge}`}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span style={{ fontWeight: '700', color: '#FFFFFF' }}>{up.day} ({up.timeWindow})</span>
+                    <span className={`risk-pill-badge ${meta.classColor}`} style={{ fontSize: '10px', padding: '2px 8px' }}>
                       {up.skycastRiskLevel?.toUpperCase()}
                     </span>
                   </div>
-                  <h4 className="font-bold text-slate-100 text-sm">{up.title}</h4>
-                  <p className="text-xs text-slate-300">
-                    Expected: <strong className="text-white">{up.measuredValue} {up.unit}</strong>
-                    {up.probability && <span className="ml-1 text-slate-400">({up.probability}% chance)</span>}
+                  <h4 style={{ fontWeight: '700', color: '#F1F5F9', fontSize: '14px', margin: '4px 0' }}>{up.title}</h4>
+                  <p style={{ fontSize: '12px', color: '#CBD5E1', margin: 0 }}>
+                    Expected: <strong style={{ color: '#FFFFFF' }}>{up.measuredValue} {up.unit}</strong>
+                    {up.probability && <span style={{ marginLeft: '6px', color: '#94A3B8' }}>({up.probability}% chance)</span>}
                   </p>
-                  <div className="text-[10px] text-slate-400 border-t border-slate-800/80 pt-1.5 flex items-center justify-between">
+                  <div style={{ fontSize: '10px', color: '#94A3B8', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
                     <span>{up.ruleBasis}</span>
-                    <span className="font-semibold text-slate-300">FORECAST</span>
+                    <span style={{ fontWeight: '600', color: '#CBD5E1' }}>FORECAST</span>
                   </div>
                 </div>
               );
             })}
           </div>
         ) : (
-          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center text-xs text-slate-400">
+          <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(15, 23, 42, 0.5)', border: '1px solid rgba(255, 255, 255, 0.08)', textAlign: 'center', fontSize: '12px', color: '#94A3B8' }}>
             No upcoming hazardous weather risks detected for {cityParam} across the 5-day forecast horizon.
           </div>
         )}
       </div>
 
       {/* 7. Real-time Monitoring & Status Timeline */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-400">
-        <div className="flex items-center gap-2">
-          <Radio size={14} className="text-emerald-400 animate-pulse" />
-          <span>Real-time WebSocket risk stream active for <strong>{cityParam}</strong></span>
+      <div className="ws-footer-bar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Radio size={14} color="#34D399" className="animate-pulse" />
+          <span>Real-time WebSocket risk stream active for <strong style={{ color: '#FFFFFF' }}>{cityParam}</strong></span>
         </div>
-        <div className="flex items-center gap-3">
-          <span>Collector cycle: <strong>180s interval</strong></span>
-          <span>Evaluation Engine: <strong>IMD Criteria v2.4</strong></span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <span>Collector cycle: <strong style={{ color: '#FFFFFF' }}>180s interval</strong></span>
+          <span>Evaluation Engine: <strong style={{ color: '#FFFFFF' }}>IMD Criteria v2.4</strong></span>
         </div>
       </div>
 
