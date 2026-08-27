@@ -288,6 +288,7 @@ class WeatherDataHub:
             daily_rain = daily.get("precipitation_probability_max", [20])
             rain_chance = daily_rain[0] if daily_rain else 20
             temp_c = round(current.get("temperature_2m", 25))
+            press_c = round(current.get("pressure_msl", current.get("surface_pressure", 1013)))
 
             now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
             result = {
@@ -306,7 +307,7 @@ class WeatherDataHub:
                 "windSpeed": round(current.get("wind_speed_10m", 12)),
                 "windDirection": get_wind_direction_label(w_deg),
                 "windDirectionDeg": w_deg,
-                "pressure": round(current.get("surface_pressure", 1013)),
+                "pressure": press_c,
                 "provider": self.provider.provider_name,
                 "nwpSource": "gfs_seamless",
                 "nwpModel": "NOAA GFS (Global Forecast System)",
@@ -318,7 +319,7 @@ class WeatherDataHub:
             await cache.set(cache_key, result, ttl=TTL_CURRENT_WEATHER)
             return result
         except Exception as exc:
-            logger.error("❌ [HUB ERROR] Point ingestion failed (%f, %f): %s", lat, lon, exc)
+            logger.error("❌ [HUB ERROR] Point ingestion failed for (%f, %f): %s", lat, lon, exc)
             stale = await cache.get_stale(cache_key)
             if stale:
                 stale["stale"] = True
@@ -326,7 +327,7 @@ class WeatherDataHub:
             raise exc
 
     async def ingest_map_weather(self) -> Dict[str, Any]:
-        """Ingest batch forecasts for all key map cities into centralized single dataset."""
+        """Ingest batch map weather dataset for all key monitored cities."""
         cache_key = "weather:map:cities"
         try:
             raw_data = await self.provider.fetch_batch_forecast(KEY_MAP_CITIES)
@@ -348,6 +349,7 @@ class WeatherDataHub:
                 temp_c = round(current.get("temperature_2m", 25))
                 precip_val = round(current.get("precipitation", 0.0), 1)
                 wind_val = round(current.get("wind_speed_10m", 12))
+                press_val = round(current.get("pressure_msl", current.get("surface_pressure", 1013)))
 
                 has_severe_alert = False
                 alert_severity = "normal"
@@ -375,7 +377,7 @@ class WeatherDataHub:
                     "windDirection": get_wind_direction_label(w_deg),
                     "windDirectionDeg": w_deg,
                     "cloudCover": round(current.get("cloud_cover", 40)),
-                    "pressure": round(current.get("surface_pressure", 1012)),
+                    "pressure": press_val,
                     "visibility": 10,
                     "hasAlert": has_severe_alert,
                     "alertSeverity": alert_severity,
@@ -452,6 +454,9 @@ class WeatherDataHub:
             longitude=lon
         )
 
+        # Standard Sea Level Pressure preferred over raw elevation station pressure
+        live_pressure = float(curr_raw.get("pressure_msl", curr_raw.get("surface_pressure", 1013.0)))
+
         # 2. Current Weather
         current_weather = CanonicalCurrentWeather(
             temperature_c=float(curr_raw.get("temperature_2m", 25.0)),
@@ -466,7 +471,7 @@ class WeatherDataHub:
             wind_direction_label=get_wind_direction_label(wind_deg),
             wind_gusts_kmh=float(curr_raw.get("wind_gusts_10m", curr_raw.get("wind_speed_10m", 10.0))),
             cloud_cover_pct=float(curr_raw.get("cloud_cover", 40.0)),
-            pressure_hpa=float(curr_raw.get("surface_pressure", 1013.0)),
+            pressure_hpa=live_pressure,
             visibility_km=float(hourly_raw.get("visibility", [10000.0])[0]) / 1000.0 if hourly_raw.get("visibility") else 10.0,
             uv_index=float(daily_raw.get("uv_index_max", [5.0])[0]) if daily_raw.get("uv_index_max") else 5.0,
             weather_code=w_code,
@@ -474,7 +479,7 @@ class WeatherDataHub:
             icon=icon_name
         )
 
-        # 3. Hourly Forecast (Next 24 hours)
+        # 3. Hourly Forecast (Next 24 hours starting from current local hour)
         hourly_times = hourly_raw.get("time", [])
         hourly_temps = hourly_raw.get("temperature_2m", [])
         hourly_feels = hourly_raw.get("apparent_temperature", [])
@@ -484,34 +489,71 @@ class WeatherDataHub:
         hourly_winds = hourly_raw.get("wind_speed_10m", [])
         hourly_clouds = hourly_raw.get("cloud_cover", [])
         hourly_hums = hourly_raw.get("relative_humidity_2m", [])
-        hourly_pressures = hourly_raw.get("surface_pressure", [])
+        hourly_pressures = hourly_raw.get("pressure_msl") or hourly_raw.get("surface_pressure", [])
         hourly_visibilities = hourly_raw.get("visibility", [])
         hourly_uvs = hourly_raw.get("uv_index", [])
 
+        # Find starting index corresponding to current local hour
+        curr_time_str = str(curr_raw.get("time", ""))
+        start_idx = 0
+        if curr_time_str and hourly_times:
+            curr_prefix = curr_time_str[:13]  # e.g. "2026-08-27T15"
+            for idx, t_str in enumerate(hourly_times):
+                if str(t_str).startswith(curr_prefix):
+                    start_idx = idx
+                    break
+            else:
+                for idx, t_str in enumerate(hourly_times):
+                    if str(t_str) >= curr_time_str:
+                        start_idx = max(0, idx)
+                        break
+
         hourly_items = []
-        for i in range(min(24, len(hourly_times))):
+        end_idx = min(len(hourly_times), start_idx + 24)
+        for offset, i in enumerate(range(start_idx, end_idx)):
             t_str = hourly_times[i]
-            hour_val = int(t_str.split("T")[1].split(":")[0]) if "T" in t_str else i
+            hour_val = int(t_str.split("T")[1].split(":")[0]) if "T" in str(t_str) else (i % 24)
             formatted_time = f"{hour_val:02d}:00"
             h_code = hourly_codes[i] if i < len(hourly_codes) else 0
             h_cond, h_icon = decode_weather_code(h_code)
 
+            if offset == 0:
+                # "Now" slot: guaranteed 100% meteorological consistency with current observation
+                h_item_temp = current_weather.temperature_c
+                h_item_feels = current_weather.feels_like_c
+                h_item_hum = current_weather.humidity_pct
+                h_item_wind = current_weather.wind_speed_kmh
+                h_item_press = current_weather.pressure_hpa
+                h_item_cond = current_weather.condition
+                h_item_icon = current_weather.icon
+                h_item_code = current_weather.weather_code
+            else:
+                h_item_temp = float(hourly_temps[i]) if i < len(hourly_temps) else current_weather.temperature_c
+                h_item_feels = float(hourly_feels[i]) if i < len(hourly_feels) else current_weather.feels_like_c
+                h_item_hum = float(hourly_hums[i]) if i < len(hourly_hums) else 60.0
+                h_item_wind = float(hourly_winds[i]) if i < len(hourly_winds) else 10.0
+                h_item_press = float(hourly_pressures[i]) if i < len(hourly_pressures) else current_weather.pressure_hpa
+                h_item_cond = h_cond
+                h_item_icon = h_icon
+                h_item_code = h_code
+
             hourly_items.append(CanonicalHourlyItem(
                 time=formatted_time,
                 hour=hour_val,
-                temperature_c=float(hourly_temps[i]) if i < len(hourly_temps) else current_weather.temperature_c,
-                feels_like_c=float(hourly_feels[i]) if i < len(hourly_feels) else current_weather.feels_like_c,
-                humidity_pct=float(hourly_hums[i]) if i < len(hourly_hums) else 60.0,
+                temperature_c=h_item_temp,
+                feels_like_c=h_item_feels,
+                humidity_pct=h_item_hum,
                 precipitation_mm=float(hourly_precips[i]) if i < len(hourly_precips) else 0.0,
                 rain_probability_pct=float(hourly_rains[i]) if i < len(hourly_rains) else 0.0,
-                wind_speed_kmh=float(hourly_winds[i]) if i < len(hourly_winds) else 10.0,
+                wind_speed_kmh=h_item_wind,
+                wind_direction_label="N",
                 cloud_cover_pct=float(hourly_clouds[i]) if i < len(hourly_clouds) else 40.0,
-                pressure_hpa=float(hourly_pressures[i]) if i < len(hourly_pressures) else 1013.0,
+                pressure_hpa=h_item_press,
                 visibility_km=float(hourly_visibilities[i]) / 1000.0 if i < len(hourly_visibilities) else 10.0,
                 uv_index=float(hourly_uvs[i]) if i < len(hourly_uvs) else 0.0,
-                weather_code=h_code,
-                condition=h_cond,
-                icon=h_icon
+                weather_code=h_item_code,
+                condition=h_item_cond,
+                icon=h_item_icon
             ))
 
         # 4. Daily Forecast (7 Days)

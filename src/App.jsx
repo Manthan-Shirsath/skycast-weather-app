@@ -3,7 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import { LanguageProvider } from './context/LanguageContext';
 import { WeatherProvider, useWeather } from './context/WeatherContext';
-import { Header } from './components/Header';
+import { Sidebar } from './components/Sidebar';
+import { TopBar } from './components/TopBar';
 import { DashboardPage } from './pages/DashboardPage';
 import { TrendsPage } from './pages/TrendsPage';
 import { MapPage } from './pages/MapPage';
@@ -18,40 +19,48 @@ function AppLayout() {
   const { isLoading, errorMessage, setErrorMessage } = useWeather();
 
   return (
-    <div className={`app-container ${isLoading ? 'is-loading' : ''}`}>
-      {/* Universal Header & Navigation */}
-      <Header />
+    <div className={`app-dashboard-shell ${isLoading ? 'is-loading' : ''}`}>
+      {/* 1. Fixed Left Sidebar Navigation */}
+      <Sidebar />
 
-      {/* Global Error Banner */}
-      {errorMessage && (
-        <div className="error-banner">
-          <div className="error-banner-content">
-            <AlertCircle size={18} />
-            <span>{errorMessage}</span>
+      {/* 2. Main Dashboard Area */}
+      <div className="app-main-viewport">
+        {/* Top Bar Header */}
+        <TopBar />
+
+        {/* Global Error Banner */}
+        {errorMessage && (
+          <div className="error-banner">
+            <div className="error-banner-content">
+              <AlertCircle size={18} />
+              <span>{errorMessage}</span>
+            </div>
+            <button
+              type="button"
+              className="error-dismiss-btn"
+              onClick={() => setErrorMessage(null)}
+              aria-label="Dismiss error"
+            >
+              <X size={16} />
+            </button>
           </div>
-          <button
-            type="button"
-            className="error-dismiss-btn"
-            onClick={() => setErrorMessage(null)}
-            aria-label="Dismiss error"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      )}
+        )}
 
-      {/* Routes Switch */}
-      <Routes>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/trends" element={<TrendsPage />} />
-        <Route path="/map" element={<MapPage />} />
-        <Route path="/details" element={<DetailsPage />} />
-        <Route path="/alerts" element={<AlertsPage />} />
-        <Route path="/weathergpt" element={<WeatherGPTPage />} />
-        <Route path="/locations" element={<LocationsPage />} />
-        <Route path="/agriculture" element={<AgriculturePage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        {/* Page Content Container */}
+        <main className="app-page-content-area">
+          <Routes>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/trends" element={<TrendsPage />} />
+            <Route path="/map" element={<MapPage />} />
+            <Route path="/details" element={<DetailsPage />} />
+            <Route path="/alerts" element={<AlertsPage />} />
+            <Route path="/weathergpt" element={<WeatherGPTPage />} />
+            <Route path="/locations" element={<LocationsPage />} />
+            <Route path="/agriculture" element={<AgriculturePage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+      </div>
     </div>
   );
 }

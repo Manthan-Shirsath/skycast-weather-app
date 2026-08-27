@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   MapContainer,
@@ -32,17 +32,25 @@ import {
   Plus,
   Minus,
   Locate,
-  ArrowUpRight,
   X,
   ExternalLink,
   Loader2,
   AlertCircle,
   AlertTriangle,
-  Radio
+  Layers as LayersIcon,
+  Maximize2,
+  Minimize2,
+  Play,
+  Pause,
+  Map as MapIcon,
+  Radar as RadarIcon,
+  Satellite as SatelliteIcon,
+  Activity,
+  Leaf
 } from 'lucide-react';
 import { WeatherIconRenderer } from '../components/WeatherIcons';
 
-// Helper component to programmatic fly to coordinates and handle zoom
+// Helper component for map camera control & clicks
 function MapController({ center, zoom, onMapClick }) {
   const map = useMap();
 
@@ -63,54 +71,66 @@ function MapController({ center, zoom, onMapClick }) {
   return null;
 }
 
-// Custom map zoom/locate action controls bridge
-function MapZoomButtons({ onZoomIn, onZoomOut, onLocate, isLocating }) {
+// Custom Zoom and Locate controls
+function MapZoomControls({ onZoomIn, onZoomOut, onLocate, isLocating }) {
   return (
-    <div className="map-controls-group">
+    <div className="map-zoom-controls-floating">
       <button
         type="button"
-        className="map-control-btn"
+        className="map-zoom-btn"
         onClick={onZoomIn}
         title="Zoom In"
         aria-label="Zoom In"
       >
-        <Plus size={18} />
+        <Plus size={16} />
       </button>
       <button
         type="button"
-        className="map-control-btn"
+        className="map-zoom-btn"
         onClick={onZoomOut}
         title="Zoom Out"
         aria-label="Zoom Out"
       >
-        <Minus size={18} />
+        <Minus size={16} />
       </button>
       <button
         type="button"
-        className={`map-control-btn ${isLocating ? 'locating' : ''}`}
+        className={`map-zoom-btn ${isLocating ? 'locating' : ''}`}
         onClick={onLocate}
-        title="Current Location"
-        aria-label="Current Location"
+        title="Locate Me"
+        aria-label="Locate Me"
       >
-        {isLocating ? <Loader2 size={18} className="animate-spin text-blue-600" /> : <Locate size={18} />}
+        {isLocating ? <Loader2 size={16} className="animate-spin text-blue-600" /> : <Locate size={16} />}
       </button>
     </div>
   );
 }
 
 export function MapPage() {
-  const { currentCity, weatherData, formatTemp, formatWind, loadCityWeather } = useWeather();
+  const { currentCity, weatherData, formatTemp, formatWind, loadCityWeather, unit } = useWeather();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // Active layer switched purely client-side without re-fetching external APIs!
-  const [activeLayer, setActiveLayer] = useState('Temperature'); // 'Temperature' | 'Rain' | 'Wind' | 'Clouds' | 'Pressure' | 'Humidity' | 'Visibility'
+  // Mode and layer toggles
+  const [mapMode, setMapMode] = useState('live'); // 'live' | 'radar' | 'satellite' | 'wind'
+  const [activeLayers, setActiveLayers] = useState({
+    Temperature: true,
+    'Rain Radar': true,
+    Wind: false,
+    Clouds: true,
+    Pressure: false,
+    Humidity: false,
+    Visibility: false
+  });
+  const [isLayersCardVisible, setIsLayersCardVisible] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isAnimationPlaying, setIsAnimationPlaying] = useState(false);
+
   const [citiesData, setCitiesData] = useState([]);
   const [radarMeta, setRadarMeta] = useState(null);
   const [indiaBoundary, setIndiaBoundary] = useState(null);
   const [selectedCity, setSelectedCity] = useState(null);
   const [pointWeather, setPointWeather] = useState(null);
-  const [mapUpdatedAt, setMapUpdatedAt] = useState(null);
   const [isStaleData, setIsStaleData] = useState(false);
 
   const [isLoadingCities, setIsLoadingCities] = useState(true);
@@ -118,13 +138,14 @@ export function MapPage() {
   const [isLocating, setIsLocating] = useState(false);
   const [noticeMessage, setNoticeMessage] = useState(null);
 
-  const [mapCenter, setMapCenter] = useState([22.5, 79.0]); // India center
+  const [mapCenter, setMapCenter] = useState([20.5937, 78.9629]); // Central India
   const [mapZoom, setMapZoom] = useState(5);
   const mapRef = useRef(null);
+  const mapContainerWrapperRef = useRef(null);
 
   const cityParam = searchParams.get('city');
 
-  // Load Official Survey of India Sovereign Boundary (Includes Jammu & Kashmir, Ladakh, PoK, Gilgit-Baltistan & Aksai Chin)
+  // Load Official Survey of India Boundary
   useEffect(() => {
     fetch('/india-boundary.json')
       .then((res) => {
@@ -135,24 +156,23 @@ export function MapPage() {
       .catch((err) => console.warn('Could not load official India boundary GeoJSON:', err));
   }, []);
 
-  // 1. Fetch Centralized Map Weather Dataset (All variables in ONE call)
+  // Fetch Centralized Map Weather Dataset
   const loadMapData = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoadingCities(true);
     try {
       const data = await fetchMapWeather();
       setCitiesData(data.cities || []);
-      setMapUpdatedAt(data.updatedAt);
       setIsStaleData(!!data.stale);
       setNoticeMessage(null);
     } catch (err) {
       console.error('Map data fetch failed:', err);
-      setNoticeMessage('Weather data unavailable (re-trying...)');
+      setNoticeMessage('Weather data unavailable (retrying...)');
     } finally {
       setIsLoadingCities(false);
     }
   }, []);
 
-  // 2. Fetch RainViewer Radar Metadata
+  // Fetch RainViewer Radar Metadata
   const loadRadar = useCallback(async () => {
     setIsLoadingRadar(true);
     try {
@@ -170,12 +190,10 @@ export function MapPage() {
     loadMapData(true);
     loadRadar();
 
-    // 3. Connect to WebSocket for live push updates from background collector
     const ws = connectWeatherWebSocket((msg) => {
       if (msg.type === 'radar_update' && msg.data) {
         setRadarMeta(msg.data);
       } else if (msg.type === 'weather_update') {
-        // Subtle background refresh without re-rendering entire map
         loadMapData(false);
       }
     }, currentCity);
@@ -187,50 +205,62 @@ export function MapPage() {
     };
   }, [loadMapData, loadRadar, currentCity]);
 
-  // 4. Handle URL city parameter centering and selection
+  // Center on city from query param or context
   useEffect(() => {
-    const targetCityName = (cityParam || currentCity || '').toLowerCase();
+    const targetCityName = (cityParam || currentCity || 'Pune').toLowerCase();
     if (citiesData.length > 0 && targetCityName) {
-      const found = citiesData.find(c => c.name.toLowerCase() === targetCityName);
+      const found = citiesData.find((c) => c.name.toLowerCase() === targetCityName);
       if (found) {
         setMapCenter([found.latitude, found.longitude]);
-        setMapZoom(7);
+        setMapZoom(6);
         setSelectedCity(found);
         setPointWeather(null);
       }
     }
   }, [cityParam, currentCity, citiesData]);
 
-  // 5. Handle Zoom Actions
+  const toggleLayer = (layerName) => {
+    setActiveLayers((prev) => ({
+      ...prev,
+      [layerName]: !prev[layerName]
+    }));
+  };
+
   const handleZoomIn = () => {
-    if (mapRef.current) {
-      mapRef.current.zoomIn();
-    }
+    if (mapRef.current) mapRef.current.zoomIn();
   };
 
   const handleZoomOut = () => {
-    if (mapRef.current) {
-      mapRef.current.zoomOut();
+    if (mapRef.current) mapRef.current.zoomOut();
+  };
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      if (mapContainerWrapperRef.current?.requestFullscreen) {
+        mapContainerWrapperRef.current.requestFullscreen();
+        setIsFullscreen(true);
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+        setIsFullscreen(false);
+      }
     }
   };
 
-  // 6. Handle Current Geolocation
   const handleLocateMe = () => {
     if (!navigator.geolocation) {
       setNoticeMessage('Geolocation is not supported by your browser.');
       return;
     }
-
     setIsLocating(true);
     setNoticeMessage(null);
-
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
         setMapCenter([latitude, longitude]);
-        setMapZoom(9);
+        setMapZoom(8);
         setSelectedCity(null);
-
         try {
           const ptData = await fetchPointWeather(latitude, longitude);
           setPointWeather({
@@ -240,7 +270,7 @@ export function MapPage() {
             ...ptData
           });
         } catch (err) {
-          console.error('Point weather lookup failed:', err);
+          console.error('Point lookup failed:', err);
           setNoticeMessage('Failed to fetch weather for your exact location.');
         } finally {
           setIsLocating(false);
@@ -248,18 +278,17 @@ export function MapPage() {
       },
       (err) => {
         setIsLocating(false);
-        if (err.code === err.PERMISSION_DENIED) {
-          setNoticeMessage('Location access was denied.');
-        } else {
-          setNoticeMessage('Unable to retrieve your current location.');
-        }
+        setNoticeMessage(
+          err.code === err.PERMISSION_DENIED
+            ? 'Location access was denied.'
+            : 'Unable to retrieve your current location.'
+        );
         setTimeout(() => setNoticeMessage(null), 5000);
       },
       { timeout: 10000, enableHighAccuracy: true }
     );
   };
 
-  // 7. Handle map clicks to load coordinates weather
   const handleMapClick = async (latlng) => {
     try {
       const ptData = await fetchPointWeather(latlng.lat, latlng.lng);
@@ -271,69 +300,129 @@ export function MapPage() {
         ...ptData
       });
     } catch (err) {
-      console.error('Point lookup error:', err);
+      console.error('Point click error:', err);
     }
   };
 
-  // 8. Instantaneous Local Layer Marker Generator (ZERO network calls on layer switch)
-  const createMarkerIcon = useCallback((city) => {
-    const isSelected = (selectedCity && selectedCity.name === city.name) ||
-      (cityParam && cityParam.toLowerCase() === city.name.toLowerCase());
+  // Custom city marker with clean badge design
+  const createMarkerIcon = useCallback(
+    (city) => {
+      const isSelected =
+        (selectedCity && selectedCity.name === city.name) ||
+        (cityParam && cityParam.toLowerCase() === city.name.toLowerCase());
 
-    let metricValue = `${formatTemp(city.temperature)}`;
-    let badgeClass = 'temp-badge';
+      const tempDisplay = formatTemp(city.temperature);
 
-    if (activeLayer === 'Rain') {
-      badgeClass = 'rain-badge';
-      metricValue = `${city.rainChance ?? city.rain_probability ?? 20}%`;
-    } else if (activeLayer === 'Wind') {
-      badgeClass = 'wind-badge';
-      const deg = city.windDirectionDeg || city.wind_direction || 0;
-      const arrowHtml = `<span class="wind-arrow-icon" style="transform: rotate(${deg}deg); display: inline-block;">↑</span>`;
-      metricValue = `${arrowHtml} ${formatWind(city.windSpeed ?? city.wind_speed)}`;
-    } else if (activeLayer === 'Clouds') {
-      badgeClass = 'clouds-badge';
-      metricValue = `${city.cloudCover ?? city.cloud_cover ?? 0}%`;
-    } else if (activeLayer === 'Pressure') {
-      badgeClass = 'pressure-badge';
-      metricValue = `${city.pressure || 1012} hPa`;
-    } else if (activeLayer === 'Humidity') {
-      badgeClass = 'humidity-badge';
-      metricValue = `${city.humidity || 60}%`;
-    } else if (activeLayer === 'Visibility') {
-      badgeClass = 'visibility-badge';
-      metricValue = `${city.visibility || 10} km`;
-    }
-
-    const alertIndicatorHtml = city.hasAlert || ['extreme', 'severe'].includes(city.alertSeverity)
-      ? `<span class="marker-alert-badge ${city.alertSeverity || 'severe'}" title="Active Weather Warning">⚠️</span>`
-      : '';
-
-    const html = `
-      <div class="custom-leaflet-marker ${isSelected ? 'marker-selected' : ''} ${badgeClass}">
-        <div class="marker-pill-box">
-          ${alertIndicatorHtml}
-          <span class="marker-pill-city">${city.name}</span>
-          <span class="marker-pill-val">${metricValue}</span>
+      const html = `
+        <div class="map-v2-marker-pill ${isSelected ? 'selected-pin' : ''}">
+          <span class="marker-city-name">${city.name}</span>
+          <span class="marker-city-temp">${tempDisplay}</span>
+          ${isSelected ? '<div class="marker-selected-pulse"></div>' : ''}
         </div>
-        <div class="marker-pin-dot ${city.hasAlert ? 'pulse-alert' : ''}"></div>
-      </div>
-    `;
+      `;
 
-    return L.divIcon({
-      className: 'leaflet-custom-div-icon',
-      html: html,
-      iconSize: [116, 42],
-      iconAnchor: [58, 42]
-    });
-  }, [activeLayer, selectedCity, cityParam, formatTemp, formatWind]);
+      return L.divIcon({
+        className: 'map-v2-leaflet-div-icon',
+        html: html,
+        iconSize: [100, 32],
+        iconAnchor: [50, 16]
+      });
+    },
+    [selectedCity, cityParam, formatTemp]
+  );
 
-  const activeCityPopup = selectedCity || pointWeather;
+  const activeInspectorCity = selectedCity || pointWeather || (citiesData.length > 0 ? citiesData[0] : null);
+
+  const layerItems = [
+    { name: 'Temperature', icon: Thermometer },
+    { name: 'Rain Radar', icon: CloudRain },
+    { name: 'Wind', icon: Wind },
+    { name: 'Clouds', icon: Cloud },
+    { name: 'Pressure', icon: Gauge },
+    { name: 'Humidity', icon: Droplets },
+    { name: 'Visibility', icon: Eye }
+  ];
 
   return (
-    <div className="weather-map-page-wrapper">
-      {/* Real Geographic Leaflet Map */}
-      <div className="weather-map-canvas-container">
+    <div className="map-v2-page-root animate-fade-in" ref={mapContainerWrapperRef}>
+      {/* 1. Header & View Switcher Row */}
+      <section className="map-v2-header-section">
+        <div className="map-v2-title-wrap">
+          <h1 className="map-v2-main-title">Weather Map</h1>
+          <p className="map-v2-main-subtitle">
+            Live weather conditions, radar, and atmospheric data across India.
+          </p>
+        </div>
+
+        <div className="map-v2-actions-row">
+          {/* Mode Switcher Pills */}
+          <div className="map-mode-switcher-pills" role="tablist" aria-label="Map Mode">
+            <button
+              type="button"
+              className={`mode-pill-btn ${mapMode === 'live' ? 'active' : ''}`}
+              onClick={() => setMapMode('live')}
+            >
+              <MapIcon size={14} />
+              <span>Live Map</span>
+            </button>
+            <button
+              type="button"
+              className={`mode-pill-btn ${mapMode === 'radar' ? 'active' : ''}`}
+              onClick={() => {
+                setMapMode('radar');
+                setActiveLayers((prev) => ({ ...prev, 'Rain Radar': true }));
+              }}
+            >
+              <RadarIcon size={14} />
+              <span>Radar</span>
+            </button>
+            <button
+              type="button"
+              className={`mode-pill-btn ${mapMode === 'satellite' ? 'active' : ''}`}
+              onClick={() => setMapMode('satellite')}
+            >
+              <SatelliteIcon size={14} />
+              <span>Satellite</span>
+            </button>
+            <button
+              type="button"
+              className={`mode-pill-btn ${mapMode === 'wind' ? 'active' : ''}`}
+              onClick={() => {
+                setMapMode('wind');
+                setActiveLayers((prev) => ({ ...prev, Wind: true }));
+              }}
+            >
+              <Activity size={14} />
+              <span>Wind Flow</span>
+            </button>
+          </div>
+
+          {/* Right Action Buttons */}
+          <div className="map-right-actions">
+            <button
+              type="button"
+              className={`map-action-btn ${isLayersCardVisible ? 'active' : ''}`}
+              onClick={() => setIsLayersCardVisible((prev) => !prev)}
+              title="Toggle Layer Controls"
+            >
+              <LayersIcon size={15} />
+              <span>Layers</span>
+            </button>
+            <button
+              type="button"
+              className="map-action-btn"
+              onClick={toggleFullscreen}
+              title="Fullscreen Map"
+            >
+              {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+              <span>Fullscreen</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* 2. Interactive Map Viewport with Floating Cards */}
+      <section className="map-v2-canvas-container">
         <MapContainer
           center={mapCenter}
           zoom={mapZoom}
@@ -342,77 +431,64 @@ export function MapPage() {
           style={{ width: '100%', height: '100%', borderRadius: '24px' }}
           ref={mapRef}
         >
-          <MapController
-            center={mapCenter}
-            zoom={mapZoom}
-            onMapClick={handleMapClick}
-          />
+          <MapController center={mapCenter} zoom={mapZoom} onMapClick={handleMapClick} />
 
-          {/* OpenStreetMap Base Map */}
+          {/* Tile Layer (OSM Base) */}
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             maxZoom={18}
           />
 
-          {/* Official Sovereign Boundary of India (Survey of India Compliant: PoK & Aksai Chin included) */}
+          {/* Official Survey of India Sovereign Boundary */}
           {indiaBoundary && (
             <GeoJSON
-              key="india-sovereign-boundary-layer"
+              key="india-sovereign-boundary"
               data={indiaBoundary}
               style={{
-                color: '#2563EB',
-                weight: 2.6,
-                opacity: 0.95,
-                fillColor: '#3B82F6',
+                color: '#3B82F6',
+                weight: 2.4,
+                opacity: 0.9,
+                fillColor: '#60A5FA',
                 fillOpacity: 0.04
-              }}
-              onEachFeature={(feature, layer) => {
-                layer.bindTooltip(
-                  '<div style="font-size: 12px; font-weight: 700; color: #1E3A8A; line-height: 1.3;">🇮🇳 Sovereign Territory of India<br/><span style="font-size: 11px; font-weight: 500; color: #475569;">Survey of India Official Boundary (including Jammu & Kashmir, Ladakh, PoK, Gilgit-Baltistan & Aksai Chin)</span></div>',
-                  { sticky: true, className: 'leaflet-india-boundary-tooltip' }
-                );
               }}
             />
           )}
 
-          {/* Real RainViewer Weather Radar Overlay */}
-          {activeLayer === 'Rain' && radarMeta && radarMeta.tileUrl && (
+          {/* RainViewer Weather Radar Overlay */}
+          {activeLayers['Rain Radar'] && radarMeta && radarMeta.tileUrl && (
             <TileLayer
               key={radarMeta.timestamp || 'radar-layer'}
               url={radarMeta.tileUrl}
-              opacity={0.72}
+              opacity={0.65}
               zIndex={500}
               attribution={radarMeta.attribution || 'Weather radar by RainViewer'}
             />
           )}
 
-          {/* Official Weather Alert Affected Area Polygons (if provided by Google/official source) */}
-          {(weatherData?.alerts || []).filter(a => a.polygon && a.polygon.length > 2).map((alertItem) => (
-            <Polygon
-              key={alertItem.id}
-              positions={alertItem.polygon}
-              pathOptions={{
-                color: '#E11D48',
-                fillColor: '#E11D48',
-                fillOpacity: 0.22,
-                weight: 2,
-                dashArray: '4, 4'
-              }}
-            >
-              <Popup>
-                <div className="map-alert-polygon-popup">
+          {/* Alert Affected Area Polygons */}
+          {(weatherData?.alerts || [])
+            .filter((a) => a.polygon && a.polygon.length > 2)
+            .map((alertItem) => (
+              <Polygon
+                key={alertItem.id}
+                positions={alertItem.polygon}
+                pathOptions={{
+                  color: '#E11D48',
+                  fillColor: '#E11D48',
+                  fillOpacity: 0.2,
+                  weight: 2,
+                  dashArray: '4, 4'
+                }}
+              >
+                <Popup>
                   <div className="font-bold text-red-600">🔴 {alertItem.title || alertItem.event}</div>
-                  <div className="text-xs text-slate-600 mt-1"><strong>Authority:</strong> {alertItem.authority}</div>
-                  {alertItem.severity && <div className="text-xs text-slate-600"><strong>Severity:</strong> {alertItem.severity}</div>}
-                  {alertItem.urgency && <div className="text-xs text-slate-600"><strong>Urgency:</strong> {alertItem.urgency}</div>}
-                  {alertItem.instructions && <div className="text-xs text-slate-800 mt-1 bg-amber-50 p-1.5 rounded">{alertItem.instructions}</div>}
-                </div>
-              </Popup>
-            </Polygon>
-          ))}
+                  <div className="text-xs text-slate-600 mt-1">{alertItem.instructions}</div>
+                </Popup>
+              </Polygon>
+            ))}
 
-          {/* Real Weather City Markers (Instantly responsive to activeLayer) */}
+          {/* City Weather Markers */}
           {citiesData.map((city) => (
             <Marker
               key={city.name}
@@ -428,288 +504,284 @@ export function MapPage() {
             />
           ))}
 
-          {/* Point Weather Marker if user clicked on map or used geolocation */}
+          {/* Point Click Marker */}
           {pointWeather && (
             <Marker
               position={[pointWeather.latitude, pointWeather.longitude]}
               icon={L.divIcon({
-                className: 'leaflet-custom-div-icon',
+                className: 'map-v2-leaflet-div-icon',
                 html: `
-                  <div class="custom-leaflet-marker marker-selected point-badge">
-                    <div class="marker-pill-box">
-                      <span class="marker-pill-city">${pointWeather.name}</span>
-                      <span class="marker-pill-val">${formatTemp(pointWeather.temperature)}</span>
-                    </div>
-                    <div class="marker-pin-dot"></div>
+                  <div class="map-v2-marker-pill selected-pin">
+                    <span class="marker-city-name">${pointWeather.name}</span>
+                    <span class="marker-city-temp">${formatTemp(pointWeather.temperature)}</span>
                   </div>
                 `,
-                iconSize: [120, 42],
-                iconAnchor: [60, 42]
+                iconSize: [110, 32],
+                iconAnchor: [55, 16]
               })}
             />
           )}
         </MapContainer>
-      </div>
 
-      {/* Real-time Status / Live Stream / Error Toast */}
-      <div className="map-status-toast">
-        {isLoadingCities || isLoadingRadar ? (
-          <div className="map-toast-item loading">
-            <Loader2 size={14} className="animate-spin text-blue-500" />
-            <span>Updating weather data...</span>
+        {/* Floating Top-Left Layer Selector Card */}
+        {isLayersCardVisible && (
+          <div className="map-v2-layers-card animate-scale-up">
+            <h3 className="layers-card-title">Weather Layers</h3>
+            <div className="layers-card-list">
+              {layerItems.map((layer) => {
+                const Icon = layer.icon;
+                const isChecked = activeLayers[layer.name];
+                return (
+                  <label
+                    key={layer.name}
+                    className={`layer-card-item ${isChecked ? 'active' : ''}`}
+                  >
+                    <div className="layer-item-left">
+                      <Icon size={16} className={isChecked ? 'text-indigo-600' : 'text-slate-400'} />
+                      <span className="layer-item-name">{layer.name}</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleLayer(layer.name)}
+                      className="layer-item-checkbox"
+                    />
+                  </label>
+                );
+              })}
+            </div>
           </div>
-        ) : isStaleData ? (
-          <div className="map-toast-item stale">
-            <AlertCircle size={14} className="text-amber-500" />
-            <span>Serving cached data (provider reconnecting...)</span>
-          </div>
-        ) : null}
+        )}
 
-        {noticeMessage && (
-          <div className="map-toast-item error">
-            <AlertCircle size={14} className="text-amber-500" />
-            <span>{noticeMessage}</span>
+        {/* Floating Bottom-Left Color Legend Card */}
+        <div className="map-v2-legend-card">
+          <span className="map-v2-legend-title">Temperature (°{unit})</span>
+          <div className="map-v2-gradient-bar" />
+          <div className="map-v2-legend-ticks">
+            <span>0°</span>
+            <span>15°</span>
+            <span>25°</span>
+            <span>35°</span>
+            <span>45°</span>
+          </div>
+        </div>
+
+        {/* Floating Top-Right Location Inspector Card */}
+        {activeInspectorCity && (
+          <div className="map-v2-inspector-card animate-scale-up">
+            <div className="inspector-card-header">
+              <div>
+                <h3 className="inspector-city-title">{activeInspectorCity.name}</h3>
+                <span className="inspector-city-sub">
+                  {activeInspectorCity.region || 'Maharashtra, India'}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="inspector-close-btn"
+                onClick={() => {
+                  setSelectedCity(null);
+                  setPointWeather(null);
+                }}
+                aria-label="Close Inspector"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Temperature & Condition Row */}
+            <div className="inspector-hero-row">
+              <span className="inspector-temp-val">{formatTemp(activeInspectorCity.temperature)}</span>
+              <div className="inspector-cond-wrap">
+                <WeatherIconRenderer name={activeInspectorCity.icon || 'partly-cloudy'} size={28} />
+                <span className="inspector-cond-text">
+                  {activeInspectorCity.condition || 'Partly Cloudy'}
+                </span>
+              </div>
+            </div>
+
+            {/* Detailed Meteorological Metrics List */}
+            <div className="inspector-metrics-list">
+              <div className="inspector-metric-row">
+                <span className="metric-row-label">
+                  <Droplets size={14} className="text-blue-500" /> Rain chance
+                </span>
+                <span className="metric-row-val">
+                  {activeInspectorCity.rainChance ?? activeInspectorCity.rain_probability ?? 98}%
+                </span>
+              </div>
+              <div className="inspector-metric-row">
+                <span className="metric-row-label">
+                  <Wind size={14} className="text-emerald-500" /> Wind
+                </span>
+                <span className="metric-row-val">
+                  {formatWind(activeInspectorCity.windSpeed ?? activeInspectorCity.wind_speed ?? 26)} (
+                  {activeInspectorCity.windDirection || 'W'})
+                </span>
+              </div>
+              <div className="inspector-metric-row">
+                <span className="metric-row-label">
+                  <Cloud size={14} className="text-sky-400" /> Cloud cover
+                </span>
+                <span className="metric-row-val">
+                  {activeInspectorCity.cloudCover ?? activeInspectorCity.cloud_cover ?? 60}%
+                </span>
+              </div>
+              <div className="inspector-metric-row">
+                <span className="metric-row-label">
+                  <Gauge size={14} className="text-purple-500" /> Pressure
+                </span>
+                <span className="metric-row-val">
+                  {activeInspectorCity.pressure || 1007} hPa
+                </span>
+              </div>
+              <div className="inspector-metric-row">
+                <span className="metric-row-label">
+                  <Droplets size={14} className="text-cyan-500" /> Humidity
+                </span>
+                <span className="metric-row-val">
+                  {activeInspectorCity.humidity || 62}%
+                </span>
+              </div>
+              <div className="inspector-metric-row">
+                <span className="metric-row-label">
+                  <Eye size={14} className="text-amber-500" /> Visibility
+                </span>
+                <span className="metric-row-val">
+                  {activeInspectorCity.visibility || 10} km
+                </span>
+              </div>
+            </div>
+
+            {/* Active Warning Banner (if warning or active alerts present) */}
+            {(activeInspectorCity.hasAlert ||
+              ['extreme', 'severe', 'warning'].includes(activeInspectorCity.alertSeverity)) && (
+              <div
+                className="inspector-alert-banner"
+                onClick={() => {
+                  const targetName = activeInspectorCity.name.includes('Coordinates')
+                    ? currentCity
+                    : activeInspectorCity.name;
+                  loadCityWeather(targetName);
+                  navigate(`/alerts?city=${encodeURIComponent(targetName)}`);
+                }}
+                role="button"
+                tabIndex={0}
+              >
+                <AlertTriangle size={14} className="text-amber-600" />
+                <span>Active Warning • Inspect</span>
+              </div>
+            )}
+
+            {/* View Full Weather Button */}
             <button
               type="button"
-              className="map-toast-close"
-              onClick={() => setNoticeMessage(null)}
+              className="inspector-action-btn"
+              onClick={() => {
+                const targetName = activeInspectorCity.name.includes('Coordinates')
+                  ? currentCity
+                  : activeInspectorCity.name;
+                loadCityWeather(targetName);
+                navigate(`/?city=${encodeURIComponent(targetName)}`);
+              }}
             >
-              <X size={12} />
+              <span>View full weather</span>
+              <ExternalLink size={14} />
             </button>
           </div>
         )}
-      </div>
 
-      {/* Top Left Layer Selector (Instant zero-request switching) */}
-      <div className="map-layer-selector-card">
-        <span className="map-layer-title">Weather Layers</span>
-        <div className="map-layer-list">
-          <button
-            type="button"
-            className={`map-layer-btn ${activeLayer === 'Temperature' ? 'active' : ''}`}
-            onClick={() => setActiveLayer('Temperature')}
-          >
-            <Thermometer size={16} />
-            <span>Temperature</span>
-          </button>
-          <button
-            type="button"
-            className={`map-layer-btn ${activeLayer === 'Rain' ? 'active' : ''}`}
-            onClick={() => setActiveLayer('Rain')}
-          >
-            <CloudRain size={16} />
-            <span>Rain Radar</span>
-          </button>
-          <button
-            type="button"
-            className={`map-layer-btn ${activeLayer === 'Wind' ? 'active' : ''}`}
-            onClick={() => setActiveLayer('Wind')}
-          >
-            <Wind size={16} />
-            <span>Wind</span>
-          </button>
-          <button
-            type="button"
-            className={`map-layer-btn ${activeLayer === 'Clouds' ? 'active' : ''}`}
-            onClick={() => setActiveLayer('Clouds')}
-          >
-            <Cloud size={16} />
-            <span>Clouds</span>
-          </button>
-          <button
-            type="button"
-            className={`map-layer-btn ${activeLayer === 'Pressure' ? 'active' : ''}`}
-            onClick={() => setActiveLayer('Pressure')}
-          >
-            <Gauge size={16} />
-            <span>Pressure</span>
-          </button>
-          <button
-            type="button"
-            className={`map-layer-btn ${activeLayer === 'Humidity' ? 'active' : ''}`}
-            onClick={() => setActiveLayer('Humidity')}
-          >
-            <Droplets size={16} />
-            <span>Humidity</span>
-          </button>
-          <button
-            type="button"
-            className={`map-layer-btn ${activeLayer === 'Visibility' ? 'active' : ''}`}
-            onClick={() => setActiveLayer('Visibility')}
-          >
-            <Eye size={16} />
-            <span>Visibility</span>
-          </button>
+        {/* Floating Bottom-Right Zoom & Locate Controls */}
+        <MapZoomControls
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onLocate={handleLocateMe}
+          isLocating={isLocating}
+        />
+      </section>
+
+      {/* 3. Bottom 5-Card Metrics Strip */}
+      <section className="map-v2-bottom-metrics-strip">
+        {/* 1. Precipitation */}
+        <div className="stitch-card map-bottom-stat-card">
+          <div className="stat-card-icon-wrap blue">
+            <CloudRain size={20} className="text-blue-500" />
+          </div>
+          <div className="stat-card-info">
+            <span className="stat-card-title">Precipitation (24h)</span>
+            <span className="stat-card-main-val">
+              {weatherData?.insight?.rainfallMm ?? 0} mm
+            </span>
+            <span className="stat-card-sub-val">No recent rainfall</span>
+          </div>
         </div>
-      </div>
 
-      {/* Dynamic Layer Legend (Bottom Left) */}
-      <div className="map-legend-card">
-        <span className="map-legend-label">
-          {activeLayer === 'Temperature' && 'Temperature (°C)'}
-          {activeLayer === 'Rain' && 'Precipitation Radar (dBZ / %)'}
-          {activeLayer === 'Wind' && 'Wind Speed (km/h)'}
-          {activeLayer === 'Clouds' && 'Cloud Coverage (%)'}
-          {activeLayer === 'Pressure' && 'Surface Pressure (hPa)'}
-          {activeLayer === 'Humidity' && 'Relative Humidity (%)'}
-          {activeLayer === 'Visibility' && 'Visibility Distance (km)'}
-        </span>
-        <div className={`map-legend-gradient-bar ${activeLayer.toLowerCase()}`} />
-        <div className="map-legend-values">
-          {activeLayer === 'Temperature' && (
-            <>
-              <span>0°C</span>
-              <span>15°C</span>
-              <span>25°C</span>
-              <span>35°C</span>
-              <span>45°C</span>
-            </>
-          )}
-          {activeLayer === 'Rain' && (
-            <>
-              <span>Light (5 dBZ)</span>
-              <span>Moderate</span>
-              <span>Heavy (55 dBZ)</span>
-            </>
-          )}
-          {activeLayer === 'Wind' && (
-            <>
-              <span>0 km/h</span>
-              <span>15 km/h</span>
-              <span>30 km/h</span>
-              <span>50+ km/h</span>
-            </>
-          )}
-          {activeLayer === 'Clouds' && (
-            <>
-              <span>0% Clear</span>
-              <span>50%</span>
-              <span>100% Overcast</span>
-            </>
-          )}
-          {activeLayer === 'Pressure' && (
-            <>
-              <span>980 hPa</span>
-              <span>1000 hPa</span>
-              <span>1020 hPa</span>
-              <span>1035 hPa</span>
-            </>
-          )}
-          {activeLayer === 'Humidity' && (
-            <>
-              <span>20%</span>
-              <span>50%</span>
-              <span>80%</span>
-              <span>100%</span>
-            </>
-          )}
-          {activeLayer === 'Visibility' && (
-            <>
-              <span>1 km</span>
-              <span>5 km</span>
-              <span>10 km</span>
-              <span>20+ km</span>
-            </>
-          )}
+        {/* 2. Wind */}
+        <div className="stitch-card map-bottom-stat-card">
+          <div className="stat-card-icon-wrap emerald">
+            <Wind size={20} className="text-emerald-500" />
+          </div>
+          <div className="stat-card-info">
+            <span className="stat-card-title">Wind (Avg)</span>
+            <span className="stat-card-main-val">
+              {formatWind(weatherData?.windSpeedKmh ?? 26)}
+            </span>
+            <span className="stat-card-sub-val">West</span>
+          </div>
         </div>
-      </div>
 
-      {/* Official Survey of India Sovereign Territory Badge */}
-      <div className="map-soi-compliance-badge" title="Official map depiction as per Survey of India guidelines">
-        <span className="map-soi-flag">🇮🇳</span>
-        <span className="map-soi-title">Official Map of India</span>
-        <span className="map-soi-sub">• Survey of India Boundary (J&K, Ladakh, PoK & Aksai Chin)</span>
-      </div>
+        {/* 3. Air Quality */}
+        <div className="stitch-card map-bottom-stat-card">
+          <div className="stat-card-icon-wrap green">
+            <Leaf size={20} className="text-emerald-500" />
+          </div>
+          <div className="stat-card-info">
+            <span className="stat-card-title">Air Quality (AQI)</span>
+            <span className="stat-card-main-val text-emerald-600">
+              {weatherData?.airQuality?.overallAqi ?? 42}
+            </span>
+            <span className="stat-card-sub-val text-emerald-600 font-semibold">Good</span>
+          </div>
+        </div>
 
-      {/* Zoom and Geolocation Action Controls (Bottom Right) */}
-      <MapZoomButtons
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onLocate={handleLocateMe}
-        isLocating={isLocating}
-      />
+        {/* 4. Pressure */}
+        <div className="stitch-card map-bottom-stat-card">
+          <div className="stat-card-icon-wrap purple">
+            <Gauge size={20} className="text-purple-500" />
+          </div>
+          <div className="stat-card-info">
+            <span className="stat-card-title">Pressure (Avg)</span>
+            <span className="stat-card-main-val">
+              {weatherData?.details?.pressureHpa ?? 1007} hPa
+            </span>
+            <span className="stat-card-sub-val">Normal</span>
+          </div>
+        </div>
 
-      {/* Selected City Weather Popup Card (Top Right) */}
-      {activeCityPopup && (
-        <div className="map-city-popup-card">
-          <div className="map-city-popup-header">
-            <div>
-              <h3 className="map-city-popup-name">{activeCityPopup.name}</h3>
-              <span className="map-city-popup-cond">{activeCityPopup.condition || 'Mainly Clear'}</span>
-            </div>
+        {/* 5. Map Time & Animation Play Trigger */}
+        <div className="stitch-card map-bottom-stat-card time-card">
+          <div className="stat-card-icon-wrap indigo">
+            <Activity size={20} className="text-indigo-500" />
+          </div>
+          <div className="stat-card-info">
+            <span className="stat-card-title">Map Time</span>
+            <span className="stat-card-main-val time-text">
+              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} •{' '}
+              {new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+            </span>
             <button
               type="button"
-              className="map-city-popup-close"
-              onClick={() => {
-                setSelectedCity(null);
-                setPointWeather(null);
-              }}
+              className="map-play-animation-btn"
+              onClick={() => setIsAnimationPlaying((p) => !p)}
             >
-              <X size={16} />
+              {isAnimationPlaying ? <Pause size={13} /> : <Play size={13} fill="currentColor" />}
+              <span>{isAnimationPlaying ? 'Pause' : 'Play Animation'}</span>
             </button>
           </div>
-
-          <div className="map-city-popup-temp-row">
-            <WeatherIconRenderer name={activeCityPopup.icon || 'partly-cloudy'} size={32} />
-            <span className="map-city-popup-temp">{formatTemp(activeCityPopup.temperature)}</span>
-          </div>
-
-          <div className="map-city-popup-stats">
-            <div className="map-city-popup-metric">
-              <Droplets size={14} className="text-blue-500" />
-              <span>Rain chance: <strong>{activeCityPopup.rainChance ?? activeCityPopup.rain_probability ?? 20}%</strong></span>
-            </div>
-
-            <div className="map-city-popup-metric">
-              <ArrowUpRight size={14} className="text-emerald-500" />
-              <span>
-                Wind: <strong>{formatWind(activeCityPopup.windSpeed ?? activeCityPopup.wind_speed)} ({activeCityPopup.windDirection || activeCityPopup.wind_direction_label || 'NE'})</strong>
-              </span>
-            </div>
-
-            <div className="map-city-popup-metric">
-              <Cloud size={14} className="text-slate-400" />
-              <span>Cloud cover: <strong>{activeCityPopup.cloudCover ?? activeCityPopup.cloud_cover ?? 40}%</strong></span>
-            </div>
-
-            <div className="map-city-popup-metric">
-              <Gauge size={14} className="text-purple-500" />
-              <span>Pressure: <strong>{activeCityPopup.pressure || 1012} hPa</strong></span>
-            </div>
-          </div>
-
-          {/* Active Alert Banner in Popup */}
-          {(activeCityPopup.hasAlert || ['extreme', 'severe'].includes(activeCityPopup.alertSeverity)) && (
-            <div
-              className="map-popup-alert-strip"
-              onClick={() => {
-                const targetName = activeCityPopup.name.includes('Coordinates') ? currentCity : activeCityPopup.name;
-                loadCityWeather(targetName);
-                navigate(`/alerts?city=${encodeURIComponent(targetName)}`);
-              }}
-            >
-              <AlertTriangle size={14} className="text-amber-600" />
-              <span>Active Warning • Inspect</span>
-            </div>
-          )}
-
-          {/* View Weather Button */}
-          <button
-            type="button"
-            className="map-city-popup-action-btn"
-            onClick={() => {
-              const targetName = activeCityPopup.name.includes('Coordinates')
-                ? currentCity
-                : activeCityPopup.name;
-              loadCityWeather(targetName);
-              navigate(`/?city=${encodeURIComponent(targetName)}`);
-            }}
-          >
-            <span>View weather</span>
-            <ExternalLink size={14} />
-          </button>
         </div>
-      )}
+      </section>
     </div>
   );
 }
+
+export default MapPage;

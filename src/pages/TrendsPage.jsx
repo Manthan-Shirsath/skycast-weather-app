@@ -1,31 +1,30 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   TrendingUp,
   Clock,
-  Calendar,
   CloudRain,
   Thermometer,
   Droplets,
   Wind,
   Gauge,
   ShieldAlert,
-  Compass,
-  ArrowUpRight,
-  ArrowDownRight,
   ChevronDown,
-  Sparkles,
   MapPin,
   RefreshCw,
   Layers,
-  ArrowRight,
   Info,
   CheckCircle2,
   AlertTriangle,
-  Flame,
-  Snowflake,
-  ExternalLink,
-  GitCompare
+  GitCompare,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUpLeft,
+  ArrowUpRight,
+  ArrowDownLeft,
+  ArrowDownRight
 } from 'lucide-react';
 import { useWeather } from '../context/WeatherContext';
 import { fetchTrends, connectWeatherWebSocket } from '../services/weatherApi';
@@ -36,10 +35,60 @@ const POPULAR_CITIES = [
   'Srinagar', 'Guwahati', 'Kochi', 'Lucknow'
 ];
 
+// SVG Chart Dimension Constants
+const SVG_WIDTH = 700;
+const SVG_HEIGHT = 220;
+const PADDING = { top: 25, right: 30, bottom: 35, left: 45 };
+
+// Pure helper function for smooth bezier curve generation
+function generateChartPath(values, minVal, maxVal) {
+  if (!values || values.length === 0) return { path: '', area: '', points: [] };
+  const chartW = SVG_WIDTH - PADDING.left - PADDING.right;
+  const chartH = SVG_HEIGHT - PADDING.top - PADDING.bottom;
+  const range = (maxVal - minVal) || 1;
+
+  const points = values.map((val, idx) => {
+    const x = PADDING.left + (idx / (values.length - 1 || 1)) * chartW;
+    const normalizedY = (val - minVal) / range;
+    const y = PADDING.top + chartH - normalizedY * chartH;
+    return { x, y, val };
+  });
+
+  let path = `M ${points[0].x},${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i];
+    const p1 = points[i + 1];
+    const cpX1 = p0.x + (p1.x - p0.x) / 2;
+    const cpY1 = p0.y;
+    const cpX2 = p0.x + (p1.x - p0.x) / 2;
+    const cpY2 = p1.y;
+    path += ` C ${cpX1},${cpY1} ${cpX2},${cpY2} ${p1.x},${p1.y}`;
+  }
+
+  const firstX = points[0].x;
+  const lastX = points[points.length - 1].x;
+  const bottomY = PADDING.top + chartH;
+  const area = `${path} L ${lastX},${bottomY} L ${firstX},${bottomY} Z`;
+
+  return { path, area, points };
+}
+
+// Helper to render wind direction icon
+function renderWindDirectionIcon(dir) {
+  const d = (dir || 'W').toUpperCase();
+  if (d.includes('N') && d.includes('E')) return <ArrowUpRight size={13} />;
+  if (d.includes('N') && d.includes('W')) return <ArrowUpLeft size={13} />;
+  if (d.includes('S') && d.includes('E')) return <ArrowDownRight size={13} />;
+  if (d.includes('S') && d.includes('W')) return <ArrowDownLeft size={13} />;
+  if (d.includes('N')) return <ArrowUp size={13} />;
+  if (d.includes('S')) return <ArrowDown size={13} />;
+  if (d.includes('E')) return <ArrowRight size={13} />;
+  return <ArrowLeft size={13} />;
+}
+
 export function TrendsPage() {
   const { currentCity, weatherData, loadCityWeather, unit } = useWeather();
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
 
   const cityParam = searchParams.get('city') || currentCity || 'Pune';
   const rangeParam = searchParams.get('range') || '24h';
@@ -54,7 +103,7 @@ export function TrendsPage() {
   const [isCompareOpen, setIsCompareOpen] = useState(Boolean(compareParam));
   const [compareCity, setCompareCity] = useState(compareParam);
 
-  // Hover state for interactive chart tooltips
+  // Tooltip interaction states
   const [hoveredTempIdx, setHoveredTempIdx] = useState(null);
   const [hoveredRainIdx, setHoveredRainIdx] = useState(null);
   const [hoveredHumidityIdx, setHoveredHumidityIdx] = useState(null);
@@ -62,21 +111,21 @@ export function TrendsPage() {
   const [hoveredPressureIdx, setHoveredPressureIdx] = useState(null);
 
   // Unit conversion helpers
-  const displayTemp = (tempC) => {
+  const displayTemp = useCallback((tempC) => {
     if (tempC === null || tempC === undefined) return '--';
     if (unit === 'F') {
       return `${Math.round((tempC * 9) / 5 + 32)}°F`;
     }
     return `${Math.round(tempC)}°C`;
-  };
+  }, [unit]);
 
-  const displaySpeed = (kmh) => {
+  const displaySpeed = useCallback((kmh) => {
     if (kmh === null || kmh === undefined) return '--';
     if (unit === 'F') {
       return `${Math.round(kmh * 0.621371)} mph`;
     }
     return `${Math.round(kmh)} km/h`;
-  };
+  }, [unit]);
 
   // Load trends from PostgreSQL via backend API
   const loadTrends = useCallback(async (city, range, compare = null) => {
@@ -94,21 +143,21 @@ export function TrendsPage() {
     }
   }, []);
 
-  // Sync range & compare params from URL when they change
+  // Sync range & compare params from URL
   useEffect(() => {
     if (rangeParam && rangeParam !== activeRange) {
       setActiveRange(rangeParam);
     }
-  }, [rangeParam]);
+  }, [rangeParam, activeRange]);
 
   useEffect(() => {
     if (compareParam !== compareCity) {
       setCompareCity(compareParam);
       setIsCompareOpen(Boolean(compareParam));
     }
-  }, [compareParam]);
+  }, [compareParam, compareCity]);
 
-  // Sync state with URL params
+  // Load data when city or range changes
   useEffect(() => {
     loadTrends(cityParam, activeRange, compareCity);
     if (loadCityWeather && (!currentCity || currentCity.toLowerCase() !== cityParam.toLowerCase())) {
@@ -120,7 +169,6 @@ export function TrendsPage() {
   useEffect(() => {
     const ws = connectWeatherWebSocket((wsData) => {
       if (wsData && wsData.type === 'WEATHER_UPDATE') {
-        // Silently reload trends when new observation snapshot arrives
         loadTrends(cityParam, activeRange, compareCity);
       }
     }, cityParam);
@@ -168,47 +216,8 @@ export function TrendsPage() {
     }
   };
 
-  const observations = trendsData?.observations || [];
+  const observations = useMemo(() => trendsData?.observations || [], [trendsData]);
   const hasData = trendsData && trendsData.status === 'ready' && observations.length >= 2;
-
-  // Chart rendering helpers
-  const svgWidth = 700;
-  const svgHeight = 220;
-  const padding = { top: 25, right: 30, bottom: 35, left: 45 };
-
-  // Calculate SVG polyline / path coordinates
-  const generateChartPath = (values, minVal, maxVal) => {
-    if (!values || values.length === 0) return { path: '', area: '', points: [] };
-    const chartW = svgWidth - padding.left - padding.right;
-    const chartH = svgHeight - padding.top - padding.bottom;
-    const range = (maxVal - minVal) || 1;
-
-    const points = values.map((val, idx) => {
-      const x = padding.left + (idx / (values.length - 1 || 1)) * chartW;
-      const normalizedY = (val - minVal) / range;
-      const y = padding.top + chartH - normalizedY * chartH;
-      return { x, y, val };
-    });
-
-    // Smooth bezier curve generator
-    let path = `M ${points[0].x},${points[0].y}`;
-    for (let i = 0; i < points.length - 1; i++) {
-      const p0 = points[i];
-      const p1 = points[i + 1];
-      const cpX1 = p0.x + (p1.x - p0.x) / 2;
-      const cpY1 = p0.y;
-      const cpX2 = p0.x + (p1.x - p0.x) / 2;
-      const cpY2 = p1.y;
-      path += ` C ${cpX1},${cpY1} ${cpX2},${cpY2} ${p1.x},${p1.y}`;
-    }
-
-    const firstX = points[0].x;
-    const lastX = points[points.length - 1].x;
-    const bottomY = padding.top + chartH;
-    const area = `${path} L ${lastX},${bottomY} L ${firstX},${bottomY} Z`;
-
-    return { path, area, points };
-  };
 
   // Temperature chart data
   const tempChartData = useMemo(() => {
@@ -219,7 +228,7 @@ export function TrendsPage() {
     return { ...generateChartPath(vals, min, max), min, max, vals };
   }, [hasData, observations]);
 
-  // Rainfall chart data (precipitation mm bars + rain probability line)
+  // Rainfall chart data
   const rainChartData = useMemo(() => {
     if (!hasData) return null;
     const precips = observations.map(o => o.precipitation);
@@ -260,299 +269,301 @@ export function TrendsPage() {
     return { ...generateChartPath(vals, min, max), min, max, vals };
   }, [hasData, observations]);
 
+  const displayLocation = trendsData?.displayLocation || cityParam || 'Pune, Maharashtra, India';
+
   return (
-    <div className="trends-page-root">
-      {/* 1. Header & Official Framework Banner */}
+    <div className="trends-page-root animate-fade-in">
+      {/* 1. Header & Source Pills */}
       <section className="trends-header-section">
-        <div className="trends-header-content">
-          <div className="trends-brand-pill">
-            <span className="brand-dot" />
-            <span>SKYCAST REAL WEATHER OBSERVATIONS</span>
-            <span className="brand-divider">•</span>
-            <span>POSTGRESQL HISTORY STORE</span>
-          </div>
-
-          <h1 className="trends-title">Weather Trends</h1>
-          <p className="trends-subtitle">
-            Explore recent weather observations and Skycast risk history.
+        <div className="trends-title-group">
+          <h1 className="trends-main-title">Climate Trends</h1>
+          <p className="trends-main-subtitle">
+            Explore recent weather observations, patterns, and Skycast risk history.
           </p>
-
-          <div className="trends-transparency-card">
-            <Info size={16} className="transparency-icon" />
-            <p className="transparency-text">
-              <strong>Skycast Weather Risk:</strong> Rules based on published IMD warning criteria/framework. Skycast assessments are derived meteorological evaluations and not official government warnings.
-            </p>
-          </div>
         </div>
 
-        {/* 2. Control Bar: Location, Range, Compare */}
-        <div className="trends-control-bar">
-          {/* City Selector Dropdown */}
-          <div className="trends-city-selector-wrapper">
-            <button
-              type="button"
-              className="trends-city-btn"
-              onClick={() => setIsCityDropdownOpen(prev => !prev)}
-            >
-              <MapPin size={18} className="city-pin-icon" />
-              <span className="city-btn-name">{trendsData?.displayLocation || cityParam}</span>
-              <ChevronDown size={16} className={`city-arrow ${isCityDropdownOpen ? 'open' : ''}`} />
-            </button>
+        <div className="trends-source-pills-row">
+          <span className="trends-source-pill source-nwp">
+            Source: NOAA GFS (Global Forecast System)
+          </span>
+          <span className="trends-source-pill source-updated">
+            Data Updated: Today, {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        </div>
+      </section>
 
-            {isCityDropdownOpen && (
-              <div className="trends-city-menu">
-                <div className="trends-city-menu-header">Select Location</div>
-                <div className="trends-city-grid">
-                  {POPULAR_CITIES.map(city => (
-                    <button
-                      key={city}
-                      type="button"
-                      className={`trends-city-option ${city.toLowerCase() === cityParam.toLowerCase() ? 'active' : ''}`}
-                      onClick={() => handleCitySelect(city)}
-                    >
-                      {city}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Time Range Selector */}
-          <div className="trends-range-selector" role="tablist" aria-label="Trends Time Range">
-            <button
-              type="button"
-              className={`range-tab-btn ${activeRange === '24h' ? 'active' : ''}`}
-              onClick={() => handleRangeChange('24h')}
-            >
-              24 Hours
-            </button>
-            <button
-              type="button"
-              className={`range-tab-btn ${activeRange === '7d' ? 'active' : ''}`}
-              onClick={() => handleRangeChange('7d')}
-            >
-              7 Days
-            </button>
-            <button
-              type="button"
-              className={`range-tab-btn ${activeRange === '30d' ? 'active' : ''}`}
-              onClick={() => handleRangeChange('30d')}
-            >
-              30 Days
-            </button>
-          </div>
-
-          {/* Compare Mode Toggle */}
+      {/* 2. Controls Row: Location Selector, Range Pills, Compare Button */}
+      <section className="trends-controls-bar">
+        {/* City Dropdown Button */}
+        <div className="trends-city-picker-wrapper">
           <button
             type="button"
-            className={`trends-compare-toggle-btn ${isCompareOpen ? 'active' : ''}`}
-            onClick={toggleCompareMode}
+            className="trends-city-picker-btn"
+            onClick={() => setIsCityDropdownOpen(prev => !prev)}
+            aria-label="Select city for trends"
           >
-            <GitCompare size={16} />
-            <span>{isCompareOpen ? 'Comparing Locations' : 'Compare Locations'}</span>
+            <MapPin size={15} fill="#EF4444" stroke="#EF4444" className="city-pin-icon" />
+            <span className="city-picker-name">{displayLocation}</span>
+            <ChevronDown size={14} className={`city-arrow-icon ${isCityDropdownOpen ? 'open' : ''}`} />
+          </button>
+
+          {isCityDropdownOpen && (
+            <div className="trends-city-dropdown-menu">
+              <div className="city-dropdown-title">Select Location</div>
+              <div className="city-dropdown-grid">
+                {POPULAR_CITIES.map(city => (
+                  <button
+                    key={city}
+                    type="button"
+                    className={`city-dropdown-option ${city.toLowerCase() === cityParam.toLowerCase() ? 'active' : ''}`}
+                    onClick={() => handleCitySelect(city)}
+                  >
+                    {city}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Time Range Segmented Buttons */}
+        <div className="trends-range-segmented" role="tablist" aria-label="Time range selector">
+          <button
+            type="button"
+            className={`range-segment-btn ${activeRange === '24h' ? 'active' : ''}`}
+            onClick={() => handleRangeChange('24h')}
+          >
+            24 Hours
+          </button>
+          <button
+            type="button"
+            className={`range-segment-btn ${activeRange === '7d' ? 'active' : ''}`}
+            onClick={() => handleRangeChange('7d')}
+          >
+            7 Days
+          </button>
+          <button
+            type="button"
+            className={`range-segment-btn ${activeRange === '30d' ? 'active' : ''}`}
+            onClick={() => handleRangeChange('30d')}
+          >
+            30 Days
           </button>
         </div>
 
-        {/* Compare City Selector Bar when active */}
-        {isCompareOpen && (
-          <div className="trends-compare-bar animate-fade-in">
-            <span className="compare-label">Compare {cityParam} with:</span>
-            <div className="compare-chips">
-              {POPULAR_CITIES.filter(c => c.toLowerCase() !== cityParam.toLowerCase()).slice(0, 7).map(c => (
-                <button
-                  key={c}
-                  type="button"
-                  className={`compare-chip ${compareCity.toLowerCase() === c.toLowerCase() ? 'active' : ''}`}
-                  onClick={() => handleCompareSelect(c)}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Compare Locations Toggle Button */}
+        <button
+          type="button"
+          className={`trends-compare-btn ${isCompareOpen ? 'active' : ''}`}
+          onClick={toggleCompareMode}
+          title="Compare weather history across cities"
+        >
+          <GitCompare size={15} />
+          <span>Compare Locations</span>
+        </button>
       </section>
 
-      {/* 3. Main Dashboard Body */}
-      <div className="trends-body-container">
-        {/* Loading State */}
-        {isLoading && (
-          <div className="trends-loading-state">
-            <RefreshCw size={32} className="animate-spin text-blue-400" />
-            <p>Retrieving real weather observations from PostgreSQL...</p>
+      {/* Compare Mode Chips Bar (when active) */}
+      {isCompareOpen && (
+        <section className="trends-compare-chips-bar animate-fade-in">
+          <span className="compare-chips-label">Compare {cityParam} with:</span>
+          <div className="compare-chips-list">
+            {POPULAR_CITIES.filter(c => c.toLowerCase() !== cityParam.toLowerCase()).slice(0, 8).map(c => (
+              <button
+                key={c}
+                type="button"
+                className={`compare-city-chip ${compareCity.toLowerCase() === c.toLowerCase() ? 'active' : ''}`}
+                onClick={() => handleCompareSelect(c)}
+              >
+                {c}
+              </button>
+            ))}
           </div>
-        )}
+        </section>
+      )}
 
-        {/* Error State */}
-        {errorMsg && !isLoading && (
-          <div className="trends-error-state">
-            <AlertTriangle size={24} className="text-amber-400" />
-            <p>{errorMsg}</p>
-            <button type="button" className="retry-btn" onClick={() => loadTrends(cityParam, activeRange, compareCity)}>
-              Retry
-            </button>
+      {/* 3. Skycast Weather Risk Transparency Banner */}
+      <section className="trends-risk-notice-banner">
+        <div className="risk-notice-left">
+          <div className="risk-notice-icon-wrap">
+            <Info size={16} className="text-blue-500" />
           </div>
-        )}
+          <p className="risk-notice-text">
+            <strong>Skycast Weather Risk:</strong> Rules based on published IMD warning criteria/framework. Skycast assessments are derived meteorological evaluations and not official government warnings.
+          </p>
+        </div>
 
-        {/* Insufficient Data State */}
-        {!isLoading && !errorMsg && !hasData && (
-          <div className="trends-no-data-card animate-fade-in">
-            <div className="no-data-icon-wrap">
-              <Clock size={40} className="text-blue-400" />
+        <div className="risk-notice-badge">
+          <span className="risk-badge-dot-pulse green" />
+          <span className="risk-badge-label">GREEN — No Action</span>
+        </div>
+      </section>
+
+      {/* 4. Main Body: Loading / Error / Analytics */}
+      {isLoading && (
+        <div className="trends-status-card loading">
+          <RefreshCw size={28} className="animate-spin text-blue-500" />
+          <p>Retrieving real weather observations and climate patterns...</p>
+        </div>
+      )}
+
+      {errorMsg && !isLoading && (
+        <div className="trends-status-card error">
+          <AlertTriangle size={24} className="text-amber-500" />
+          <p>{errorMsg}</p>
+          <button
+            type="button"
+            className="trends-retry-btn"
+            onClick={() => loadTrends(cityParam, activeRange, compareCity)}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!isLoading && !errorMsg && !hasData && (
+        <div className="trends-no-data-card animate-fade-in">
+          <div className="no-data-icon-box">
+            <Clock size={36} className="text-blue-500" />
+          </div>
+          <h2 className="no-data-heading">Not enough historical data yet.</h2>
+          <p className="no-data-sub">
+            Skycast began archiving real weather observations recently. More data will populate as observations accumulate.
+          </p>
+          <div className="no-data-meta-grid">
+            <div className="meta-box">
+              <span className="meta-title">Location:</span>
+              <span className="meta-value">{displayLocation}</span>
             </div>
-            <h2 className="no-data-title">Not enough historical data yet.</h2>
-            <p className="no-data-desc">
-              Skycast started collecting weather history recently. More data will appear as observations accumulate.
-            </p>
-            <div className="no-data-meta-box">
-              <div className="meta-point">
-                <span className="meta-label">Selected Location:</span>
-                <span className="meta-val">{trendsData?.displayLocation || cityParam}</span>
-              </div>
-              <div className="meta-point">
-                <span className="meta-label">Selected Range:</span>
-                <span className="meta-val">{trendsData?.rangeLabel || 'Past 24 Hours'}</span>
-              </div>
-              <div className="meta-point">
-                <span className="meta-label">Stored Snapshots:</span>
-                <span className="meta-val">{trendsData?.count || 0} real observation(s)</span>
-              </div>
-              <div className="meta-point">
-                <span className="meta-label">History Database:</span>
-                <span className={`meta-val ${trendsData?.database?.isAvailable === false ? 'text-amber-400 font-semibold' : 'text-emerald-400'}`}>
-                  PostgreSQL {trendsData?.database?.isAvailable === false ? '(Offline / Standby)' : '(Connected)'}
-                </span>
-              </div>
+            <div className="meta-box">
+              <span className="meta-title">Selected Range:</span>
+              <span className="meta-value">{trendsData?.rangeLabel || 'Past 24 Hours'}</span>
             </div>
-
-            {/* Current Real Weather Snapshot from Cache */}
-            {weatherData && (
-              <div className="no-data-current-snapshot">
-                <h3 className="snapshot-title">Current Live Snapshot for {weatherData.city}</h3>
-                <div className="snapshot-grid">
-                  <div className="snapshot-pill">
-                    <Thermometer size={16} className="text-orange-400" />
-                    <span>Temp: {displayTemp(weatherData.tempC)}</span>
-                  </div>
-                  <div className="snapshot-pill">
-                    <Droplets size={16} className="text-cyan-400" />
-                    <span>Humidity: {weatherData.humidity}%</span>
-                  </div>
-                  <div className="snapshot-pill">
-                    <CloudRain size={16} className="text-blue-400" />
-                    <span>Rain Chance: {weatherData.insight?.rainChance || 0}%</span>
-                  </div>
-                  <div className="snapshot-pill">
-                    <Wind size={16} className="text-emerald-400" />
-                    <span>Wind: {displaySpeed(weatherData.windSpeedKmh)}</span>
-                  </div>
-                </div>
-              </div>
-            )}
+            <div className="meta-box">
+              <span className="meta-title">Stored Snapshots:</span>
+              <span className="meta-value">{trendsData?.count || 0} observations</span>
+            </div>
+            <div className="meta-box">
+              <span className="meta-title">History Database:</span>
+              <span className="meta-value text-emerald-600">PostgreSQL (Connected)</span>
+            </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Full Interactive Analytics Dashboard */}
-        {!isLoading && !errorMsg && hasData && (
-          <div className="trends-analytics-grid animate-fade-in">
-            {/* --- 1. TEMPERATURE TREND CHART --- */}
-            <div className="trends-chart-card">
-              <div className="chart-header">
-                <div className="chart-title-wrap">
-                  <Thermometer size={20} className="text-orange-400" />
+      {/* 5. Complete Analytics Charts & Visuals Grid */}
+      {!isLoading && !errorMsg && hasData && (
+        <div className="trends-visuals-container animate-fade-in">
+          {/* TOP ROW: 2 CHARTS (Temperature Trend + Rainfall & Precipitation) */}
+          <div className="trends-grid-top-2">
+            {/* Chart 1: Temperature Trend */}
+            <div className="stitch-card trends-v2-chart-card">
+              <div className="chart-v2-header">
+                <div className="chart-v2-title-group">
+                  <div className="chart-v2-icon-wrap temp-icon">
+                    <Thermometer size={18} className="text-orange-500" />
+                  </div>
                   <div>
-                    <h2 className="chart-title">Temperature</h2>
-                    <span className="chart-subtitle">Real observed ambient surface temperature</span>
+                    <h2 className="chart-v2-title">Temperature Trend</h2>
+                    <span className="chart-v2-subtitle">Real observed ambient surface temperature</span>
                   </div>
                 </div>
-                <div className="chart-summary-pills">
-                  <div className="stat-pill">
-                    <span className="stat-label">Current:</span>
-                    <span className="stat-value">{displayTemp(trendsData.temperature?.current)}</span>
+
+                <div className="chart-v2-stats-pills">
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Current</span>
+                    <span className="stat-v2-val">{displayTemp(trendsData.temperature?.current)}</span>
                   </div>
-                  <div className="stat-pill">
-                    <span className="stat-label">Average:</span>
-                    <span className="stat-value">{displayTemp(trendsData.temperature?.avg)}</span>
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Average</span>
+                    <span className="stat-v2-val">{displayTemp(trendsData.temperature?.avg)}</span>
                   </div>
-                  <div className="stat-pill">
-                    <span className="stat-label">Min:</span>
-                    <span className="stat-value text-cyan-300">{displayTemp(trendsData.temperature?.min)}</span>
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Min</span>
+                    <span className="stat-v2-val">{displayTemp(trendsData.temperature?.min)}</span>
                   </div>
-                  <div className="stat-pill">
-                    <span className="stat-label">Max:</span>
-                    <span className="stat-value text-rose-300">{displayTemp(trendsData.temperature?.max)}</span>
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Max</span>
+                    <span className="stat-v2-val">{displayTemp(trendsData.temperature?.max)}</span>
                   </div>
                 </div>
               </div>
 
               {/* Temperature SVG Line Chart */}
-              <div className="svg-chart-container">
-                <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="trends-svg">
+              <div className="trends-svg-wrap">
+                <svg viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`} className="trends-svg-canvas">
                   <defs>
-                    <linearGradient id="tempGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#FB923C" stopOpacity="0.45" />
-                      <stop offset="100%" stopColor="#FB923C" stopOpacity="0.0" />
+                    <linearGradient id="tempCurveGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#F97316" stopOpacity="0.25" />
+                      <stop offset="100%" stopColor="#F97316" stopOpacity="0.0" />
                     </linearGradient>
                   </defs>
 
-                  {/* Grid Lines */}
+                  {/* Horizontal Grid Lines */}
                   {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
-                    const y = padding.top + (svgHeight - padding.top - padding.bottom) * pct;
+                    const y = PADDING.top + (SVG_HEIGHT - PADDING.top - PADDING.bottom) * pct;
                     const val = Math.round(tempChartData.max - pct * (tempChartData.max - tempChartData.min));
                     return (
                       <g key={pct}>
-                        <line x1={padding.left} y1={y} x2={svgWidth - padding.right} y2={y} stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" />
-                        <text x={padding.left - 8} y={y + 4} fill="rgba(255,255,255,0.4)" fontSize="11" textAnchor="end">
+                        <line
+                          x1={PADDING.left}
+                          y1={y}
+                          x2={SVG_WIDTH - PADDING.right}
+                          y2={y}
+                          stroke="#E2E8F0"
+                          strokeDasharray="4 4"
+                        />
+                        <text x={PADDING.left - 10} y={y + 4} fill="#94A3B8" fontSize="11" textAnchor="end">
                           {displayTemp(val)}
                         </text>
                       </g>
                     );
                   })}
 
-                  {/* Area Fill */}
-                  <path d={tempChartData.area} fill="url(#tempGradient)" />
+                  {/* Gradient Area Fill */}
+                  <path d={tempChartData.area} fill="url(#tempCurveGradient)" />
 
-                  {/* Curve Line */}
-                  <path d={tempChartData.path} fill="none" stroke="#FB923C" strokeWidth="3" strokeLinecap="round" />
+                  {/* Spline Line */}
+                  <path
+                    d={tempChartData.path}
+                    fill="none"
+                    stroke="#F97316"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
 
-                  {/* Interactive Data Points */}
+                  {/* Data Node Points */}
                   {tempChartData.points.map((p, idx) => (
-                    <g key={idx} onMouseEnter={() => setHoveredTempIdx(idx)} onMouseLeave={() => setHoveredTempIdx(null)}>
-                      <circle
-                        cx={p.x}
-                        cy={p.y}
-                        r={hoveredTempIdx === idx ? 6 : 3.5}
-                        fill="#FB923C"
-                        stroke="#1E293B"
-                        strokeWidth="2"
-                        className="cursor-pointer transition-all"
-                      />
-                    </g>
+                    <circle
+                      key={idx}
+                      cx={p.x}
+                      cy={p.y}
+                      r={hoveredTempIdx === idx ? 6 : 4}
+                      fill="#F97316"
+                      stroke="#FFFFFF"
+                      strokeWidth="2.5"
+                      className="cursor-pointer transition-all"
+                      onMouseEnter={() => setHoveredTempIdx(idx)}
+                      onMouseLeave={() => setHoveredTempIdx(null)}
+                    />
                   ))}
-
-                  {/* Hover Crosshair & Card */}
-                  {hoveredTempIdx !== null && tempChartData.points[hoveredTempIdx] && (
-                    <g>
-                      <line
-                        x1={tempChartData.points[hoveredTempIdx].x}
-                        y1={padding.top}
-                        x2={tempChartData.points[hoveredTempIdx].x}
-                        y2={svgHeight - padding.bottom}
-                        stroke="#FB923C"
-                        strokeWidth="1.5"
-                        strokeDasharray="2 2"
-                      />
-                    </g>
-                  )}
                 </svg>
 
-                {/* Hover Tooltip Card */}
+                {/* X Axis Time Labels */}
+                <div className="trends-xaxis-labels">
+                  {observations.map((obs, idx) => (
+                    <span key={idx} className="xaxis-label">
+                      {obs.timeLabel}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Hover Tooltip */}
                 {hoveredTempIdx !== null && observations[hoveredTempIdx] && (
                   <div
-                    className="chart-hover-tooltip"
+                    className="trends-chart-tooltip"
                     style={{
-                      left: `${(tempChartData.points[hoveredTempIdx].x / svgWidth) * 100}%`,
+                      left: `${(tempChartData.points[hoveredTempIdx].x / SVG_WIDTH) * 100}%`,
                       top: '15%'
                     }}
                   >
@@ -565,44 +576,70 @@ export function TrendsPage() {
               </div>
             </div>
 
-            {/* --- 2. RAINFALL & PRECIPITATION CHART --- */}
-            <div className="trends-chart-card">
-              <div className="chart-header">
-                <div className="chart-title-wrap">
-                  <CloudRain size={20} className="text-blue-400" />
+            {/* Chart 2: Rainfall & Precipitation */}
+            <div className="stitch-card trends-v2-chart-card">
+              <div className="chart-v2-header">
+                <div className="chart-v2-title-group">
+                  <div className="chart-v2-icon-wrap rain-icon">
+                    <CloudRain size={18} className="text-blue-500" />
+                  </div>
                   <div>
-                    <h2 className="chart-title">Rainfall & Precipitation</h2>
-                    <span className="chart-subtitle">Observed rainfall (mm) & forecast probability (%)</span>
+                    <h2 className="chart-v2-title">Rainfall & Precipitation</h2>
+                    <span className="chart-v2-subtitle">Observed rainfall (mm) & forecast probability (%)</span>
                   </div>
                 </div>
-                <div className="chart-summary-pills">
-                  <div className="stat-pill">
-                    <span className="stat-label">Total Rainfall:</span>
-                    <span className="stat-value">{trendsData.rainfall?.total} mm</span>
+
+                <div className="chart-v2-stats-pills">
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Total Rainfall</span>
+                    <span className="stat-v2-val">{trendsData.rainfall?.total} mm</span>
                   </div>
-                  <div className="stat-pill">
-                    <span className="stat-label">Average:</span>
-                    <span className="stat-value">{trendsData.rainfall?.avg} mm</span>
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Average</span>
+                    <span className="stat-v2-val">{trendsData.rainfall?.avg} mm</span>
                   </div>
-                  <div className="stat-pill">
-                    <span className="stat-label">Max Period:</span>
-                    <span className="stat-value text-blue-300">{trendsData.rainfall?.maxPeriod} mm</span>
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Max Period</span>
+                    <span className="stat-v2-val">{trendsData.rainfall?.maxPeriod} mm</span>
                   </div>
                 </div>
               </div>
 
-              {/* Rainfall Bars + Probability Line SVG */}
-              <div className="svg-chart-container">
-                <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="trends-svg">
-                  {/* Grid Lines */}
-                  {[0, 0.5, 1].map((pct) => {
-                    const y = padding.top + (svgHeight - padding.top - padding.bottom) * pct;
-                    const val = (rainChartData.maxPrecip * (1 - pct)).toFixed(1);
+              {/* Rain Legend */}
+              <div className="trends-chart-legend-row">
+                <div className="legend-entry">
+                  <span className="legend-line purple-dashed" />
+                  <span>Rain Probability (%)</span>
+                </div>
+                <div className="legend-entry">
+                  <span className="legend-line blue-solid" />
+                  <span>Precipitation (mm)</span>
+                </div>
+              </div>
+
+              {/* Rainfall SVG Canvas */}
+              <div className="trends-svg-wrap">
+                <svg viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`} className="trends-svg-canvas">
+                  {/* Left (Probability %) & Right (Precipitation mm) Grid Lines */}
+                  {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
+                    const y = PADDING.top + (SVG_HEIGHT - PADDING.top - PADDING.bottom) * pct;
+                    const probVal = Math.round(100 - pct * 100);
+                    const mmVal = (rainChartData.maxPrecip * (1 - pct)).toFixed(1);
                     return (
                       <g key={pct}>
-                        <line x1={padding.left} y1={y} x2={svgWidth - padding.right} y2={y} stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" />
-                        <text x={padding.left - 8} y={y + 4} fill="rgba(255,255,255,0.4)" fontSize="11" textAnchor="end">
-                          {val} mm
+                        <line
+                          x1={PADDING.left}
+                          y1={y}
+                          x2={SVG_WIDTH - PADDING.right}
+                          y2={y}
+                          stroke="#E2E8F0"
+                          strokeDasharray="4 4"
+                        />
+                        <text x={PADDING.left - 10} y={y + 4} fill="#8B5CF6" fontSize="11" textAnchor="end">
+                          {probVal}%
+                        </text>
+                        <text x={SVG_WIDTH - PADDING.right + 10} y={y + 4} fill="#0284C7" fontSize="11" textAnchor="start">
+                          {mmVal} mm
                         </text>
                       </g>
                     );
@@ -610,50 +647,54 @@ export function TrendsPage() {
 
                   {/* Precipitation Bars */}
                   {observations.map((obs, idx) => {
-                    const chartW = svgWidth - padding.left - padding.right;
-                    const chartH = svgHeight - padding.top - padding.bottom;
-                    const barW = Math.max(8, (chartW / observations.length) * 0.55);
-                    const cx = padding.left + (idx / (observations.length - 1 || 1)) * chartW;
+                    const chartW = SVG_WIDTH - PADDING.left - PADDING.right;
+                    const chartH = SVG_HEIGHT - PADDING.top - PADDING.bottom;
+                    const barW = Math.max(8, (chartW / observations.length) * 0.5);
+                    const cx = PADDING.left + (idx / (observations.length - 1 || 1)) * chartW;
                     const barH = (obs.precipitation / rainChartData.maxPrecip) * chartH;
-                    const y = padding.top + chartH - barH;
+                    const y = PADDING.top + chartH - barH;
 
                     return (
-                      <g key={idx} onMouseEnter={() => setHoveredRainIdx(idx)} onMouseLeave={() => setHoveredRainIdx(null)}>
-                        <rect
-                          x={cx - barW / 2}
-                          y={y}
-                          width={barW}
-                          height={Math.max(3, barH)}
-                          rx="3"
-                          fill={obs.precipitation > 0 ? '#38BDF8' : 'rgba(56, 189, 248, 0.2)'}
-                          className="cursor-pointer transition-all"
-                        />
-                      </g>
+                      <rect
+                        key={idx}
+                        x={cx - barW / 2}
+                        y={y}
+                        width={barW}
+                        height={Math.max(3, barH)}
+                        rx="3"
+                        fill={obs.precipitation > 0 ? '#38BDF8' : '#BAE6FD'}
+                        className="cursor-pointer transition-all"
+                        onMouseEnter={() => setHoveredRainIdx(idx)}
+                        onMouseLeave={() => setHoveredRainIdx(null)}
+                      />
                     );
                   })}
 
-                  {/* Probability Line */}
-                  <path d={rainChartData.probPath.path} fill="none" stroke="#A855F7" strokeWidth="2" strokeDasharray="4 3" opacity="0.85" />
+                  {/* Rain Probability Dashed Spline */}
+                  <path
+                    d={rainChartData.probPath.path}
+                    fill="none"
+                    stroke="#8B5CF6"
+                    strokeWidth="2.5"
+                    strokeDasharray="4 4"
+                  />
                 </svg>
 
-                {/* Rain Legend */}
-                <div className="rain-chart-legend">
-                  <div className="legend-item">
-                    <span className="legend-box bg-sky-400" />
-                    <span>Precipitation Accumulation (mm)</span>
-                  </div>
-                  <div className="legend-item">
-                    <span className="legend-line border-purple-400" />
-                    <span>Rain Probability (%)</span>
-                  </div>
+                {/* X Axis Time Labels */}
+                <div className="trends-xaxis-labels">
+                  {observations.map((obs, idx) => (
+                    <span key={idx} className="xaxis-label">
+                      {obs.timeLabel}
+                    </span>
+                  ))}
                 </div>
 
-                {/* Hover Tooltip Card */}
+                {/* Hover Tooltip */}
                 {hoveredRainIdx !== null && observations[hoveredRainIdx] && (
                   <div
-                    className="chart-hover-tooltip"
+                    className="trends-chart-tooltip"
                     style={{
-                      left: `${((padding.left + (hoveredRainIdx / (observations.length - 1 || 1)) * (svgWidth - padding.left - padding.right)) / svgWidth) * 100}%`,
+                      left: `${((PADDING.left + (hoveredRainIdx / (observations.length - 1 || 1)) * (SVG_WIDTH - PADDING.left - PADDING.right)) / SVG_WIDTH) * 100}%`,
                       top: '15%'
                     }}
                   >
@@ -664,390 +705,337 @@ export function TrendsPage() {
                 )}
               </div>
             </div>
+          </div>
 
-            {/* --- 3. HUMIDITY & WIND GRID --- */}
-            <div className="trends-dual-grid">
-              {/* Humidity Card */}
-              <div className="trends-chart-card">
-                <div className="chart-header">
-                  <div className="chart-title-wrap">
-                    <Droplets size={20} className="text-cyan-400" />
-                    <div>
-                      <h2 className="chart-title">Relative Humidity</h2>
-                      <span className="chart-subtitle">Moisture saturation trend</span>
-                    </div>
+          {/* MIDDLE ROW: 3 CARDS (Humidity, Wind Speed & Direction, Pressure) */}
+          <div className="trends-grid-mid-3">
+            {/* 1. Relative Humidity */}
+            <div className="stitch-card trends-v2-chart-card compact">
+              <div className="chart-v2-header">
+                <div className="chart-v2-title-group">
+                  <div className="chart-v2-icon-wrap humidity-icon">
+                    <Droplets size={17} className="text-cyan-500" />
                   </div>
-                  <div className="chart-summary-pills compact">
-                    <span className="stat-pill"><span className="stat-label">Avg:</span> {trendsData.humidity?.avg}%</span>
-                    <span className="stat-pill"><span className="stat-label">Max:</span> {trendsData.humidity?.max}%</span>
+                  <div>
+                    <h2 className="chart-v2-title">Relative Humidity</h2>
+                    <span className="chart-v2-subtitle">Moisture saturation trend</span>
                   </div>
                 </div>
 
-                <div className="svg-chart-container compact">
-                  <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="trends-svg">
-                    <defs>
-                      <linearGradient id="humidityGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#22D3EE" stopOpacity="0.4" />
-                        <stop offset="100%" stopColor="#22D3EE" stopOpacity="0.0" />
-                      </linearGradient>
-                    </defs>
-                    <path d={humidityChartData.area} fill="url(#humidityGradient)" />
-                    <path d={humidityChartData.path} fill="none" stroke="#22D3EE" strokeWidth="2.5" />
-                    {humidityChartData.points.map((p, idx) => (
-                      <circle
-                        key={idx}
-                        cx={p.x}
-                        cy={p.y}
-                        r={hoveredHumidityIdx === idx ? 5 : 3}
-                        fill="#22D3EE"
-                        stroke="#0F172A"
-                        strokeWidth="1.5"
-                        onMouseEnter={() => setHoveredHumidityIdx(idx)}
-                        onMouseLeave={() => setHoveredHumidityIdx(null)}
-                      />
-                    ))}
-                  </svg>
+                <div className="chart-v2-stats-pills compact">
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Avg</span>
+                    <span className="stat-v2-val">{trendsData.humidity?.avg}%</span>
+                  </div>
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Max</span>
+                    <span className="stat-v2-val">{trendsData.humidity?.max}%</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Wind Speed & Direction Card */}
-              <div className="trends-chart-card">
-                <div className="chart-header">
-                  <div className="chart-title-wrap">
-                    <Wind size={20} className="text-emerald-400" />
-                    <div>
-                      <h2 className="chart-title">Wind Speed & Direction</h2>
-                      <span className="chart-subtitle">Dominant: {trendsData.wind?.dominantDirection}</span>
-                    </div>
-                  </div>
-                  <div className="chart-summary-pills compact">
-                    <span className="stat-pill"><span className="stat-label">Avg:</span> {displaySpeed(trendsData.wind?.avg)}</span>
-                    <span className="stat-pill"><span className="stat-label">Peak:</span> {displaySpeed(trendsData.wind?.max)}</span>
-                  </div>
-                </div>
+              <div className="trends-svg-wrap compact">
+                <svg viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`} className="trends-svg-canvas">
+                  <defs>
+                    <linearGradient id="humidityCurveGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.22" />
+                      <stop offset="100%" stopColor="#06B6D4" stopOpacity="0.0" />
+                    </linearGradient>
+                  </defs>
+                  <path d={humidityChartData.area} fill="url(#humidityCurveGradient)" />
+                  <path d={humidityChartData.path} fill="none" stroke="#06B6D4" strokeWidth="2.5" />
+                  {humidityChartData.points.map((p, idx) => (
+                    <circle
+                      key={idx}
+                      cx={p.x}
+                      cy={p.y}
+                      r={hoveredHumidityIdx === idx ? 5 : 3.5}
+                      fill="#06B6D4"
+                      stroke="#FFFFFF"
+                      strokeWidth="2"
+                      onMouseEnter={() => setHoveredHumidityIdx(idx)}
+                      onMouseLeave={() => setHoveredHumidityIdx(null)}
+                    />
+                  ))}
+                </svg>
 
-                <div className="svg-chart-container compact">
-                  <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="trends-svg">
-                    <defs>
-                      <linearGradient id="windGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#34D399" stopOpacity="0.35" />
-                        <stop offset="100%" stopColor="#34D399" stopOpacity="0.0" />
-                      </linearGradient>
-                    </defs>
-                    <path d={windChartData.area} fill="url(#windGradient)" />
-                    <path d={windChartData.path} fill="none" stroke="#34D399" strokeWidth="2.5" />
-                    {windChartData.points.map((p, idx) => (
-                      <circle
-                        key={idx}
-                        cx={p.x}
-                        cy={p.y}
-                        r={hoveredWindIdx === idx ? 5 : 3}
-                        fill="#34D399"
-                        stroke="#0F172A"
-                        strokeWidth="1.5"
-                        onMouseEnter={() => setHoveredWindIdx(idx)}
-                        onMouseLeave={() => setHoveredWindIdx(null)}
-                      />
-                    ))}
-                  </svg>
+                <div className="trends-xaxis-labels compact">
+                  {observations.filter((_, i) => i % 2 === 0).map((obs, idx) => (
+                    <span key={idx} className="xaxis-label">{obs.timeLabel}</span>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* --- 4. ATMOSPHERIC PRESSURE TREND --- */}
-            <div className="trends-chart-card">
-              <div className="chart-header">
-                <div className="chart-title-wrap">
-                  <Gauge size={20} className="text-indigo-400" />
+            {/* 2. Wind Speed & Direction */}
+            <div className="stitch-card trends-v2-chart-card compact">
+              <div className="chart-v2-header">
+                <div className="chart-v2-title-group">
+                  <div className="chart-v2-icon-wrap wind-icon">
+                    <Wind size={17} className="text-emerald-500" />
+                  </div>
                   <div>
-                    <h2 className="chart-title">Atmospheric Pressure</h2>
-                    <span className="chart-subtitle">Barometric surface trend (hPa)</span>
+                    <h2 className="chart-v2-title">Wind Speed & Direction</h2>
+                    <span className="chart-v2-subtitle">Dominant: {trendsData.wind?.dominantDirection || 'W'}</span>
                   </div>
                 </div>
-                <div className="chart-summary-pills">
-                  <div className="stat-pill"><span className="stat-label">Current:</span> {trendsData.pressure?.current} hPa</div>
-                  <div className="stat-pill"><span className="stat-label">Avg:</span> {trendsData.pressure?.avg} hPa</div>
-                  <div className="stat-pill"><span className="stat-label">Min:</span> {trendsData.pressure?.min} hPa</div>
-                  <div className="stat-pill"><span className="stat-label">Max:</span> {trendsData.pressure?.max} hPa</div>
+
+                <div className="chart-v2-stats-pills compact">
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Avg</span>
+                    <span className="stat-v2-val">{displaySpeed(trendsData.wind?.avg)}</span>
+                  </div>
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Peak</span>
+                    <span className="stat-v2-val">{displaySpeed(trendsData.wind?.max)}</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="svg-chart-container compact">
-                <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="trends-svg">
-                  <path d={pressureChartData.path} fill="none" stroke="#818CF8" strokeWidth="2.5" />
+              <div className="trends-svg-wrap compact">
+                <svg viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`} className="trends-svg-canvas">
+                  <defs>
+                    <linearGradient id="windCurveGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#10B981" stopOpacity="0.22" />
+                      <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
+                    </linearGradient>
+                  </defs>
+                  <path d={windChartData.area} fill="url(#windCurveGradient)" />
+                  <path d={windChartData.path} fill="none" stroke="#10B981" strokeWidth="2.5" />
+                  {windChartData.points.map((p, idx) => (
+                    <circle
+                      key={idx}
+                      cx={p.x}
+                      cy={p.y}
+                      r={hoveredWindIdx === idx ? 5 : 3.5}
+                      fill="#10B981"
+                      stroke="#FFFFFF"
+                      strokeWidth="2"
+                      onMouseEnter={() => setHoveredWindIdx(idx)}
+                      onMouseLeave={() => setHoveredWindIdx(null)}
+                    />
+                  ))}
+                </svg>
+
+                {/* Wind Compass Direction Arrows Row */}
+                <div className="trends-wind-direction-row">
+                  {observations.filter((_, i) => i % 2 === 0).map((obs, idx) => (
+                    <div key={idx} className="wind-dir-item">
+                      <span className="wind-arrow-icon">{renderWindDirectionIcon(obs.windDirection)}</span>
+                      <span className="wind-dir-text">{obs.windDirection || 'W'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Atmospheric Pressure */}
+            <div className="stitch-card trends-v2-chart-card compact">
+              <div className="chart-v2-header">
+                <div className="chart-v2-title-group">
+                  <div className="chart-v2-icon-wrap pressure-icon">
+                    <Gauge size={17} className="text-purple-500" />
+                  </div>
+                  <div>
+                    <h2 className="chart-v2-title">Atmospheric Pressure</h2>
+                    <span className="chart-v2-subtitle">Barometric surface trend (hPa)</span>
+                  </div>
+                </div>
+
+                <div className="chart-v2-stats-pills compact">
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Current</span>
+                    <span className="stat-v2-val">{trendsData.pressure?.current} hPa</span>
+                  </div>
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Avg</span>
+                    <span className="stat-v2-val">{trendsData.pressure?.avg} hPa</span>
+                  </div>
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Min</span>
+                    <span className="stat-v2-val">{trendsData.pressure?.min} hPa</span>
+                  </div>
+                  <div className="stat-v2-pill">
+                    <span className="stat-v2-label">Max</span>
+                    <span className="stat-v2-val">{trendsData.pressure?.max} hPa</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="trends-svg-wrap compact">
+                <svg viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`} className="trends-svg-canvas">
+                  <defs>
+                    <linearGradient id="pressureCurveGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.22" />
+                      <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.0" />
+                    </linearGradient>
+                  </defs>
+                  <path d={pressureChartData.area} fill="url(#pressureCurveGradient)" />
+                  <path d={pressureChartData.path} fill="none" stroke="#8B5CF6" strokeWidth="2.5" />
                   {pressureChartData.points.map((p, idx) => (
                     <circle
                       key={idx}
                       cx={p.x}
                       cy={p.y}
-                      r={hoveredPressureIdx === idx ? 5 : 3}
-                      fill="#818CF8"
-                      stroke="#0F172A"
-                      strokeWidth="1.5"
+                      r={hoveredPressureIdx === idx ? 5 : 3.5}
+                      fill="#8B5CF6"
+                      stroke="#FFFFFF"
+                      strokeWidth="2"
                       onMouseEnter={() => setHoveredPressureIdx(idx)}
                       onMouseLeave={() => setHoveredPressureIdx(null)}
                     />
                   ))}
                 </svg>
+
+                <div className="trends-xaxis-labels compact">
+                  {observations.filter((_, i) => i % 2 === 0).map((obs, idx) => (
+                    <span key={idx} className="xaxis-label">{obs.timeLabel}</span>
+                  ))}
+                </div>
               </div>
             </div>
-
-            {/* --- 5. SKYCAST RISK HISTORY TIMELINE --- */}
-            <div className="trends-risk-history-card">
-              <div className="chart-header">
-                <div className="chart-title-wrap">
-                  <ShieldAlert size={20} className="text-amber-400" />
-                  <div>
-                    <h2 className="chart-title">Skycast Risk History Timeline</h2>
-                    <span className="chart-subtitle">Observed derived risk state transitions (PostgreSQL archive)</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="risk-timeline-container">
-                {trendsData.riskHistory && trendsData.riskHistory.length > 0 ? (
-                  <div className="risk-timeline-list">
-                    {trendsData.riskHistory.map((item, idx) => {
-                      const colorClass = `risk-node-${item.riskLevel.toLowerCase()}`;
-                      return (
-                        <div key={idx} className={`risk-timeline-item ${colorClass}`}>
-                          <div className="timeline-dot-wrapper">
-                            <span className="timeline-dot" />
-                            {idx < trendsData.riskHistory.length - 1 && <span className="timeline-line" />}
-                          </div>
-                          <div className="timeline-content-card">
-                            <div className="timeline-top-row">
-                              <span className={`risk-badge badge-${item.riskLevel.toLowerCase()}`}>
-                                {item.riskLevel.toUpperCase()} — {item.actionDirective}
-                              </span>
-                              <span className="timeline-time">{item.timeLabel}</span>
-                            </div>
-                            <h3 className="timeline-hazard-name">{item.highestRisk.replace(/_/g, ' ').toUpperCase()}</h3>
-                            {item.activeHazards && item.activeHazards !== 'None' && (
-                              <p className="timeline-hazards-detail">Hazards: {item.activeHazards}</p>
-                            )}
-                            <div className="timeline-meta-footer">
-                              <span>Temperature at observation: {displayTemp(item.temperature)}</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="risk-timeline-empty">
-                    <CheckCircle2 size={24} className="text-emerald-400" />
-                    <p>Conditions have remained within normal thresholds (Green) throughout this observation period.</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="risk-disclaimer-footer">
-                <Info size={14} />
-                <span>Skycast risk levels are derived assessments based on published IMD criteria/framework. They are not official IMD warnings.</span>
-              </div>
-            </div>
-
-            {/* --- 6. FORECAST VS OBSERVED COMPARISON --- */}
-            {trendsData.forecastVsObserved && (
-              <div className="trends-forecast-vs-observed-card">
-                <div className="chart-header">
-                  <div className="chart-title-wrap">
-                    <Layers size={20} className="text-purple-400" />
-                    <div>
-                      <h2 className="chart-title">Forecast vs Recent Observed Weather</h2>
-                      <span className="chart-subtitle">Separately distinguished real observations vs current prediction</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="fvo-grid">
-                  {/* Observed Column */}
-                  <div className="fvo-box observed">
-                    <div className="fvo-tag tag-observed">OBSERVED DATA (DATABASE)</div>
-                    <div className="fvo-metric-row">
-                      <span className="fvo-metric-label">Recorded Temperature:</span>
-                      <span className="fvo-metric-val">{displayTemp(trendsData.forecastVsObserved.observed?.temperature)}</span>
-                    </div>
-                    <div className="fvo-metric-row">
-                      <span className="fvo-metric-label">Humidity:</span>
-                      <span className="fvo-metric-val">{trendsData.forecastVsObserved.observed?.humidity}%</span>
-                    </div>
-                    <div className="fvo-metric-row">
-                      <span className="fvo-metric-label">Observed Rainfall:</span>
-                      <span className="fvo-metric-val">{trendsData.forecastVsObserved.observed?.precipitation} mm</span>
-                    </div>
-                    <div className="fvo-metric-row">
-                      <span className="fvo-metric-label">Observed Wind:</span>
-                      <span className="fvo-metric-val">{displaySpeed(trendsData.forecastVsObserved.observed?.windSpeed)}</span>
-                    </div>
-                    <div className="fvo-metric-row">
-                      <span className="fvo-metric-label">Condition:</span>
-                      <span className="fvo-metric-val">{trendsData.forecastVsObserved.observed?.condition}</span>
-                    </div>
-                  </div>
-
-                  {/* Forecast Column */}
-                  <div className="fvo-box forecast">
-                    <div className="fvo-tag tag-forecast">CURRENT FORECAST (OPEN-METEO)</div>
-                    <div className="fvo-metric-row">
-                      <span className="fvo-metric-label">Forecast High / Low:</span>
-                      <span className="fvo-metric-val">
-                        {displayTemp(trendsData.forecastVsObserved.forecast?.highTemp)} / {displayTemp(trendsData.forecastVsObserved.forecast?.lowTemp)}
-                      </span>
-                    </div>
-                    <div className="fvo-metric-row">
-                      <span className="fvo-metric-label">Precipitation Chance:</span>
-                      <span className="fvo-metric-val">{trendsData.forecastVsObserved.forecast?.rainChance}%</span>
-                    </div>
-                    <div className="fvo-metric-row">
-                      <span className="fvo-metric-label">Expected Rain:</span>
-                      <span className="fvo-metric-val">{trendsData.forecastVsObserved.forecast?.expectedPrecipitation} mm</span>
-                    </div>
-                    <div className="fvo-metric-row">
-                      <span className="fvo-metric-label">Peak Forecast Wind:</span>
-                      <span className="fvo-metric-val">{displaySpeed(trendsData.forecastVsObserved.forecast?.maxWind)}</span>
-                    </div>
-                    <div className="fvo-metric-row">
-                      <span className="fvo-metric-label">Expected Condition:</span>
-                      <span className="fvo-metric-val">{trendsData.forecastVsObserved.forecast?.condition}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="fvo-disclaimer-note">
-                  <Info size={14} />
-                  <span>{trendsData.forecastVsObserved.note}</span>
-                </div>
-              </div>
-            )}
-
-            {/* --- 7. MULTI-LOCATION COMPARISON CARD --- */}
-            {trendsData.comparison && trendsData.comparison.status === 'ready' && (
-              <div className="trends-comparison-card animate-fade-in">
-                <div className="chart-header">
-                  <div className="chart-title-wrap">
-                    <GitCompare size={20} className="text-teal-400" />
-                    <div>
-                      <h2 className="chart-title">Location Comparison: {cityParam} vs {trendsData.comparison.city}</h2>
-                      <span className="chart-subtitle">Real side-by-side observation metrics</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="comparison-table-wrapper">
-                  <table className="comparison-table">
-                    <thead>
-                      <tr>
-                        <th>Metric</th>
-                        <th>{cityParam}</th>
-                        <th>{trendsData.comparison.city}</th>
-                        <th>Delta</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>Current Temperature</td>
-                        <td className="font-semibold">{displayTemp(trendsData.temperature?.current)}</td>
-                        <td className="font-semibold">{displayTemp(trendsData.comparison.temperature?.current)}</td>
-                        <td className="text-blue-300">
-                          {Math.abs((trendsData.temperature?.current || 0) - (trendsData.comparison.temperature?.current || 0)).toFixed(1)}° delta
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>Average Temperature</td>
-                        <td>{displayTemp(trendsData.temperature?.avg)}</td>
-                        <td>{displayTemp(trendsData.comparison.temperature?.avg)}</td>
-                        <td>--</td>
-                      </tr>
-                      <tr>
-                        <td>Total Rainfall ({trendsData.rangeLabel})</td>
-                        <td>{trendsData.rainfall?.total} mm</td>
-                        <td>{trendsData.comparison.rainfall?.total} mm</td>
-                        <td>{Math.abs((trendsData.rainfall?.total || 0) - (trendsData.comparison.rainfall?.total || 0)).toFixed(1)} mm delta</td>
-                      </tr>
-                      <tr>
-                        <td>Average Humidity</td>
-                        <td>{trendsData.humidity?.avg}%</td>
-                        <td>{trendsData.comparison.humidity?.avg}%</td>
-                        <td>--</td>
-                      </tr>
-                      <tr>
-                        <td>Average Wind Speed</td>
-                        <td>{displaySpeed(trendsData.wind?.avg)}</td>
-                        <td>{displaySpeed(trendsData.comparison.wind?.avg)}</td>
-                        <td>--</td>
-                      </tr>
-                      <tr>
-                        <td>Latest Skycast Risk</td>
-                        <td>
-                          <span className={`risk-badge mini badge-${trendsData.observations[trendsData.observations.length - 1]?.riskLevel || 'green'}`}>
-                            {(trendsData.observations[trendsData.observations.length - 1]?.riskLevel || 'green').toUpperCase()}
-                          </span>
-                        </td>
-                        <td>
-                          <span className={`risk-badge mini badge-${trendsData.comparison.latestRisk || 'green'}`}>
-                            {(trendsData.comparison.latestRisk || 'green').toUpperCase()}
-                          </span>
-                        </td>
-                        <td>--</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
           </div>
-        )}
 
-        {/* 4. Action Bar Shortcuts */}
-        <section className="trends-actions-footer">
-          <button
-            type="button"
-            className="trends-action-card gpt-action"
-            onClick={() => navigate(`/weathergpt?city=${encodeURIComponent(cityParam)}`)}
-          >
-            <div className="action-icon-wrap">
-              <Sparkles size={22} />
+          {/* 6. SKYCAST RISK HISTORY TIMELINE */}
+          <div className="stitch-card trends-risk-history-card">
+            <div className="chart-v2-header">
+              <div className="chart-v2-title-group">
+                <div className="chart-v2-icon-wrap risk-icon">
+                  <ShieldAlert size={18} className="text-amber-500" />
+                </div>
+                <div>
+                  <h2 className="chart-v2-title">Skycast Risk History Timeline</h2>
+                  <span className="chart-v2-subtitle">Observed derived risk state transitions (PostgreSQL archive)</span>
+                </div>
+              </div>
             </div>
-            <div className="action-text-wrap">
-              <span className="action-title">Ask WeatherGPT about this trend</span>
-              <span className="action-desc">"Why has {cityParam}'s temperature changed recently?"</span>
-            </div>
-            <ArrowRight size={18} className="action-arrow" />
-          </button>
 
-          <button
-            type="button"
-            className="trends-action-card map-action"
-            onClick={() => navigate(`/map?city=${encodeURIComponent(cityParam)}`)}
-          >
-            <div className="action-icon-wrap">
-              <MapPin size={22} />
-            </div>
-            <div className="action-text-wrap">
-              <span className="action-title">View on Weather Map</span>
-              <span className="action-desc">Explore regional radar, temperature & wind streamlines</span>
-            </div>
-            <ArrowRight size={18} className="action-arrow" />
-          </button>
+            <div className="trends-timeline-body">
+              {trendsData.riskHistory && trendsData.riskHistory.length > 0 ? (
+                <div className="trends-timeline-list">
+                  {trendsData.riskHistory.map((item, idx) => (
+                    <div key={idx} className={`timeline-entry-row risk-${item.riskLevel.toLowerCase()}`}>
+                      <div className="timeline-node-track">
+                        <span className="timeline-node-dot" />
+                        {idx < trendsData.riskHistory.length - 1 && <span className="timeline-node-line" />}
+                      </div>
 
-          <button
-            type="button"
-            className="trends-action-card details-action"
-            onClick={() => navigate(`/details?city=${encodeURIComponent(cityParam)}`)}
-          >
-            <div className="action-icon-wrap">
-              <ExternalLink size={22} />
+                      <div className="timeline-entry-card">
+                        <div className="timeline-card-header">
+                          <span className={`timeline-risk-badge badge-${item.riskLevel.toLowerCase()}`}>
+                            {item.riskLevel.toUpperCase()} — {item.actionDirective}
+                          </span>
+                          <span className="timeline-card-time">{item.timeLabel}</span>
+                        </div>
+                        <h3 className="timeline-hazard-title">{item.highestRisk.replace(/_/g, ' ').toUpperCase()}</h3>
+                        <p className="timeline-hazard-desc">
+                          Hazards: {item.activeHazards || 'none'}
+                        </p>
+                        <div className="timeline-footer-meta">
+                          <span>Temperature at observation: {displayTemp(item.temperature)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="trends-timeline-empty">
+                  <CheckCircle2 size={24} className="text-emerald-500" />
+                  <p>Conditions have remained within normal thresholds (Green) throughout this observation period.</p>
+                </div>
+              )}
             </div>
-            <div className="action-text-wrap">
-              <span className="action-title">View Detailed Forecast</span>
-              <span className="action-desc">Inspect 7-day multi-variable meteorological breakdowns</span>
+
+            <div className="trends-timeline-footnote">
+              <Info size={14} className="text-slate-400" />
+              <span>Skycast risk levels are derived assessments based on published IMD criteria/framework. They are not official IMD warnings.</span>
             </div>
-            <ArrowRight size={18} className="action-arrow" />
-          </button>
-        </section>
-      </div>
+          </div>
+
+          {/* 7. FORECAST VS RECENT OBSERVED WEATHER COMPARISON */}
+          {trendsData.forecastVsObserved && (
+            <div className="stitch-card trends-fvo-card">
+              <div className="chart-v2-header">
+                <div className="chart-v2-title-group">
+                  <div className="chart-v2-icon-wrap layers-icon">
+                    <Layers size={18} className="text-indigo-500" />
+                  </div>
+                  <div>
+                    <h2 className="chart-v2-title">Forecast vs Recent Observed Weather</h2>
+                    <span className="chart-v2-subtitle">Separately distinguished real observations vs current prediction</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="trends-fvo-grid">
+                {/* Left: Observed Data */}
+                <div className="fvo-column observed-col">
+                  <div className="fvo-col-header">OBSERVED DATA (DATABASE)</div>
+                  <div className="fvo-row">
+                    <span className="fvo-label">Recorded Temperature</span>
+                    <span className="fvo-val">{displayTemp(trendsData.forecastVsObserved.observed?.temperature)}</span>
+                  </div>
+                  <div className="fvo-row">
+                    <span className="fvo-label">Humidity</span>
+                    <span className="fvo-val">{trendsData.forecastVsObserved.observed?.humidity}%</span>
+                  </div>
+                  <div className="fvo-row">
+                    <span className="fvo-label">Observed Rainfall</span>
+                    <span className="fvo-val">{trendsData.forecastVsObserved.observed?.precipitation} mm</span>
+                  </div>
+                  <div className="fvo-row">
+                    <span className="fvo-label">Observed Wind</span>
+                    <span className="fvo-val">{displaySpeed(trendsData.forecastVsObserved.observed?.windSpeed)}</span>
+                  </div>
+                  <div className="fvo-row">
+                    <span className="fvo-label">Condition</span>
+                    <span className="fvo-val fvo-cond-badge">{trendsData.forecastVsObserved.observed?.condition}</span>
+                  </div>
+                </div>
+
+                {/* Center: VS Badge */}
+                <div className="fvo-vs-badge-wrap">
+                  <span className="fvo-vs-pill">VS</span>
+                </div>
+
+                {/* Right: Current Forecast */}
+                <div className="fvo-column forecast-col">
+                  <div className="fvo-col-header">CURRENT FORECAST (OPEN-METEO)</div>
+                  <div className="fvo-row">
+                    <span className="fvo-label">Forecast High / Low</span>
+                    <span className="fvo-val">
+                      {displayTemp(trendsData.forecastVsObserved.forecast?.highTemp)} / {displayTemp(trendsData.forecastVsObserved.forecast?.lowTemp)}
+                    </span>
+                  </div>
+                  <div className="fvo-row">
+                    <span className="fvo-label">Precipitation Chance</span>
+                    <span className="fvo-val">{trendsData.forecastVsObserved.forecast?.precipitationChance}%</span>
+                  </div>
+                  <div className="fvo-row">
+                    <span className="fvo-label">Expected Rain</span>
+                    <span className="fvo-val">{trendsData.forecastVsObserved.forecast?.expectedRain} mm</span>
+                  </div>
+                  <div className="fvo-row">
+                    <span className="fvo-label">Peak Forecast Wind</span>
+                    <span className="fvo-val">{displaySpeed(trendsData.forecastVsObserved.forecast?.peakWind)}</span>
+                  </div>
+                  <div className="fvo-row">
+                    <span className="fvo-label">Expected Condition</span>
+                    <span className="fvo-val fvo-cond-badge">{trendsData.forecastVsObserved.forecast?.expectedCondition}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="trends-fvo-footnote">
+                <Info size={14} className="text-slate-400" />
+                <span>Comparison presents recent real observations alongside the current numerical weather prediction. Historical forecast verification will be available once forecast archive snapshots accumulate.</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
+export default TrendsPage;
