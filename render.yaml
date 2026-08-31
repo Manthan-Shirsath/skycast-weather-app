@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: skycast-weather-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: ENABLE_BACKGROUND_POLLING
+        value: "false"
