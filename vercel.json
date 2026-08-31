@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://backend-production-24f0.up.railway.app/api/:path*"
+      "destination": "https://skycast-weather-app-6s57.onrender.com/api/:path*"
     },
     {
       "source": "/ws/:path*",
-      "destination": "wss://backend-production-24f0.up.railway.app/ws/:path*"
+      "destination": "wss://skycast-weather-app-6s57.onrender.com/ws/:path*"
     },
     {
       "source": "/(.*)",
