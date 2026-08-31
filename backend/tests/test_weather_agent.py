@@ -11,11 +11,13 @@ Tests:
 """
 
 import ast
+import json
 import asyncio
 from pathlib import Path
 from typing import Dict, Any, List
 from unittest.mock import AsyncMock, patch, MagicMock
 import pytest
+
 
 from backend.app.services.agent.schemas import (
     LocationSearchArgs,
@@ -290,6 +292,225 @@ async def test_chat_route_backward_compatibility():
         assert res.reply == "It is 27°C in Pune."
         assert res.city == "Pune"
         assert res.session_id == "test-session-123"
+
+
+def test_agent_builds_openai_and_sarvam_chat_completions_payload():
+    """Verify the backend builds OpenAI-compatible request payloads for both Groq and Sarvam."""
+    agent_groq = WeatherGPTAgent(provider="groq", model="openai/gpt-oss-120b", api_key="test-groq-key")
+    payload_groq = agent_groq._build_openai_payload(
+        messages=[{"role": "user", "content": "Is it raining in Pune?"}],
+        system_instruction="Stay grounded in the weather data.",
+        tools=[{
+            "type": "function",
+            "function": {
+                "name": "get_current_weather",
+                "description": "Get current weather",
+                "parameters": {"type": "object", "properties": {"location": {"type": "string"}}, "required": ["location"]}
+            }
+        }]
+    )
+    assert payload_groq["model"] == "openai/gpt-oss-120b"
+    assert payload_groq["stream"] is False
+    assert payload_groq["messages"][0]["role"] == "system"
+    assert payload_groq["tools"][0]["function"]["name"] == "get_current_weather"
+
+    # Verify Sarvam alias
+    agent_sarvam = WeatherGPTAgent(provider="sarvam", model="sarvam-105b", api_key="sarvam-test-key")
+    payload_sarvam = agent_sarvam._build_sarvam_payload(
+        messages=[{"role": "user", "content": "Is it raining in Pune?"}],
+        system_instruction="Stay grounded in the weather data.",
+        tools=[]
+    )
+    assert payload_sarvam["model"] == "sarvam-105b"
+
+
+# ==============================================================================
+# 4. GROQ PROVIDER SUITE (MIGRATION & VALIDATION)
+# ==============================================================================
+
+def test_groq_provider_initialization():
+    """Verify Groq is configured as active provider with proper defaults."""
+    agent = WeatherGPTAgent(provider="groq", api_key="gsk_dummy_test_key_for_unit_tests")
+    assert agent.provider == "groq"
+    assert "groq.com" in agent.base_url
+    assert agent.model == "openai/gpt-oss-120b"
+    assert agent.api_key == "gsk_dummy_test_key_for_unit_tests"
+
+
+@pytest.mark.anyio
+async def test_groq_successful_basic_completion_and_reasoning_stripping():
+    """Verify successful basic completion and verify internal reasoning traces (<think>) are stripped."""
+    agent = WeatherGPTAgent(provider="groq", api_key="gsk_dummy_test_key_for_unit_tests")
+
+    mock_groq_response = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "<think>\nAnalyzing meteorological data for Pune\nTemp is 28C, humidity 65%\n</think>The weather in Pune is currently partly cloudy with a temperature of 28°C."
+                }
+            }
+        ]
+    }
+
+    mock_res = MagicMock()
+    mock_res.status_code = 200
+    mock_res.json.return_value = mock_groq_response
+
+    with patch("httpx.AsyncClient.post", AsyncMock(return_value=mock_res)):
+        res = await agent.run(message="What is the weather in Pune?", default_city="Pune")
+        assert res.reply == "The weather in Pune is currently partly cloudy with a temperature of 28°C."
+        assert "<think>" not in res.reply
+        assert "Analyzing meteorological data" not in res.reply
+        assert res.city == "Pune"
+
+
+@pytest.mark.anyio
+async def test_groq_provider_failure_fallback():
+    """Verify that if Groq is unavailable or times out, the agent does NOT crash and returns deterministic fallback."""
+    agent = WeatherGPTAgent(provider="groq", api_key="gsk_dummy_test_key_for_unit_tests")
+
+    with patch("httpx.AsyncClient.post", AsyncMock(side_effect=Exception("Groq API 503 Service Unavailable"))), \
+         patch("backend.app.services.weather_hub.weather_hub.get_weather_for_city", AsyncMock(return_value={
+             "city": "Pune", "tempC": 27, "feelsLikeC": 28, "condition": "Partly Cloudy",
+             "humidity": 60, "windSpeedKmh": 12, "insight": {"rainChance": 15}, "daily": []
+         })), \
+         patch("backend.app.services.alert_service.alert_service.get_alerts_for_city", AsyncMock(return_value={
+             "highestRiskColour": "green", "alerts": []
+         })):
+        res = await agent.run(message="What is the weather in Pune?", default_city="Pune")
+        assert res is not None
+        assert "27°C" in res.reply
+        assert res.city == "Pune"
+
+
+@pytest.mark.anyio
+async def test_groq_tool_calling_flow_with_token_optimization():
+    """
+    Verify multi-turn tool calling token optimization:
+    1. Initial LLM request contains full tools declaration.
+    2. Tool call is executed and result recorded.
+    3. Final synthesis request omits the tools declaration to conserve tokens.
+    4. Final response is returned as fresh/non-degraded when Groq succeeds.
+    """
+    agent = WeatherGPTAgent(provider="groq", api_key="gsk_dummy_test_key_for_unit_tests")
+
+    tool_call_response = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_12345",
+                            "type": "function",
+                            "function": {
+                                "name": "get_current_weather",
+                                "arguments": json.dumps({"location": "Mumbai"})
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
+    final_response = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "In Mumbai, the current weather is 30°C and humid."
+                }
+            }
+        ]
+    }
+
+    captured_payloads = []
+
+    mock_res_1 = MagicMock()
+    mock_res_1.status_code = 200
+    mock_res_1.json.return_value = tool_call_response
+
+    mock_res_2 = MagicMock()
+    mock_res_2.status_code = 200
+    mock_res_2.json.return_value = final_response
+
+    async def mock_post(url, headers=None, json=None, timeout=None):
+        captured_payloads.append(json)
+        if len(captured_payloads) == 1:
+            return mock_res_1
+        return mock_res_2
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post), \
+         patch("backend.app.services.weather_hub.weather_hub.get_weather_for_city", AsyncMock(return_value={
+             "city": "Mumbai", "tempC": 30, "feelsLikeC": 34, "condition": "Humid",
+             "humidity": 80, "windSpeedKmh": 18, "details": {"pressureHpa": 1010, "visibilityKm": 8.0}
+         })):
+        res = await agent.run(message="What is the weather in Mumbai?", default_city="Mumbai")
+
+        # 1. Verify two HTTP calls were made
+        assert len(captured_payloads) == 2, "Expected exactly 2 LLM calls (1 tool calling + 1 synthesis)"
+
+        # 2. Call 1 MUST include tools parameter
+        assert "tools" in captured_payloads[0], "Call 1 must contain tools"
+        assert len(captured_payloads[0]["tools"]) > 0
+
+        # 3. Call 2 (Synthesis) MUST NOT include tools parameter (Token Optimization)
+        assert "tools" not in captured_payloads[1], "Call 2 (synthesis) must omit tools to prevent rate limit"
+
+        # 4. Verify successful output
+        assert res.reply == "In Mumbai, the current weather is 30°C and humid."
+        assert res.city == "Mumbai"
+        assert res.data_status == "fresh"
+        assert len(res.cards) > 0
+        assert res.cards[0].type == "current_weather"
+
+
+
+@pytest.mark.anyio
+async def test_groq_marathi_response():
+    """Verify Marathi multilingual prompt construction and Marathi response handling."""
+    agent = WeatherGPTAgent(provider="groq", api_key="gsk_dummy_test_key_for_unit_tests")
+
+    marathi_reply = "पुण्यात सध्या निरभ्र आकाश असून तापमान २८°से आहे."
+    mock_response = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": marathi_reply
+                }
+            }
+        ]
+    }
+
+    mock_res = MagicMock()
+    mock_res.status_code = 200
+    mock_res.json.return_value = mock_response
+
+    with patch("httpx.AsyncClient.post", AsyncMock(return_value=mock_res)):
+        res = await agent.run(message="पुण्यात हवामान कसे आहे?", default_city="Pune", language="mr")
+        assert res.reply == marathi_reply
+        assert res.city == "Pune"
+
+
+@pytest.mark.anyio
+async def test_groq_missing_api_key_safe_fallback():
+    """Verify missing API key safely triggers deterministic fallback without raising exceptions."""
+    agent = WeatherGPTAgent(provider="groq", api_key="")
+
+    with patch("backend.app.services.weather_hub.weather_hub.get_weather_for_city", AsyncMock(return_value={
+        "city": "Pune", "tempC": 26, "feelsLikeC": 27, "condition": "Cloudy",
+        "humidity": 70, "windSpeedKmh": 10, "insight": {"rainChance": 20}, "daily": []
+    })), patch("backend.app.services.alert_service.alert_service.get_alerts_for_city", AsyncMock(return_value={
+        "highestRiskColour": "green", "alerts": []
+    })):
+        res = await agent.run(message="What's the weather today?", default_city="Pune")
+        assert res is not None
+        assert "26°C" in res.reply
+
 
 
 # ==============================================================================

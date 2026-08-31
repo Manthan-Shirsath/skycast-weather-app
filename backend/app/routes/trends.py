@@ -7,14 +7,14 @@ router = APIRouter(prefix="/api", tags=["trends"])
 @router.get("/trends")
 async def get_weather_trends(
     city: str = Query("Pune", description="City name to fetch historical trends for"),
-    range: str = Query("24h", description="Time window for trends: '24h', '7d', or '30d'"),
+    time_range: str = Query("24h", alias="range", description="Time window for trends: '24h', '7d', or '30d'"),
     compareWith: Optional[str] = Query(None, description="Optional secondary city for side-by-side comparison")
 ):
     """
     Retrieve real weather observation analytics and Skycast risk history from PostgreSQL.
     Supports 24 hours, 7 days, and 30 days ranges, plus multi-city comparison.
     """
-    clean_range = range.strip().lower()
+    clean_range = time_range.strip().lower()
     if clean_range not in ["24h", "7d", "30d"]:
         clean_range = "24h"
 
@@ -23,6 +23,32 @@ async def get_weather_trends(
         raise HTTPException(status_code=400, detail="Parameter 'city' is required.")
 
     clean_compare = compareWith.strip() if compareWith else None
+
+    import datetime
+    from backend.app.services.historical_weather_service import HistoricalWeatherService
+    
+    # Database-First caching logic
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    end_date = now_utc.date()
+    
+    if clean_range == "7d":
+        start_date = (now_utc - datetime.timedelta(days=7)).date()
+    elif clean_range == "30d":
+        start_date = (now_utc - datetime.timedelta(days=30)).date()
+    else:
+        # 24h range spans yesterday and today
+        start_date = (now_utc - datetime.timedelta(days=1)).date()
+    
+    try:
+        # Ensure complete coverage in database
+        await HistoricalWeatherService.ensure_coverage(clean_city, start_date, end_date)
+        if clean_compare:
+            await HistoricalWeatherService.ensure_coverage(clean_compare, start_date, end_date)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("skycast.api")
+        logger.error("Failed to ensure historical coverage for '%s': %s", clean_city, e)
+        # Continue and return whatever is in the DB even if backfill fails
 
     trends_data = await HistoryService.get_trends(
         city_name=clean_city,

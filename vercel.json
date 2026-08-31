@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://backend-production-24f0.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/ws/:path*",
+      "destination": "wss://backend-production-24f0.up.railway.app/ws/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

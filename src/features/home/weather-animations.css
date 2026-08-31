@@ -1,0 +1,147 @@
+/* Dynamic Weather Background Animations */
+
+@keyframes pulse-sun {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+.animate-pulse-sun {
+  animation: pulse-sun 6s ease-in-out infinite;
+}
+
+@keyframes drift-clouds {
+  from { transform: translateX(0%); }
+  to { transform: translateX(-50%); }
+}
+
+.animate-drift-clouds {
+  animation: drift-clouds 120s linear infinite;
+}
+
+.animate-drift-clouds-fast {
+  animation: drift-clouds 60s linear infinite;
+}
+
+@keyframes fall-rain {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(100%); }
+}
+
+.animate-fall-rain {
+  animation: fall-rain 1s linear infinite;
+}
+
+.animate-fall-rain-slow {
+  animation: fall-rain 1.5s linear infinite;
+}
+
+@keyframes fall-snow {
+  from { transform: translateY(-100%) rotate(0deg); }
+  to { transform: translateY(100%) rotate(360deg); }
+}
+
+.animate-fall-snow {
+  animation: fall-snow 10s linear infinite;
+}
+
+.animate-fall-snow-slow {
+  animation: fall-snow 15s linear infinite;
+}
+
+/* Time of day gradients */
+.bg-gradient-morning {
+  background: linear-gradient(135deg, #FFB75E 0%, #ED8F03 100%);
+}
+.bg-gradient-afternoon {
+  background: linear-gradient(135deg, #4DA0B0 0%, #D39D38 100%);
+}
+.bg-gradient-evening {
+  background: linear-gradient(135deg, #141E30 0%, #243B55 100%);
+}
+.bg-gradient-night {
+  background: linear-gradient(135deg, #000428 0%, #004e92 100%);
+}
+
+/* Specific weather gradients */
+.bg-gradient-clear-morning {
+  background: linear-gradient(to bottom, #87CEEB, #FFB6C1);
+}
+.bg-gradient-clear-afternoon {
+  background: linear-gradient(to bottom, #4CA1AF, #C4E0E5);
+}
+.bg-gradient-clear-evening {
+  background: linear-gradient(to bottom, #2C3E50, #FD746C);
+}
+.bg-gradient-clear-night {
+  background: linear-gradient(to bottom, #0F2027, #203A43, #2C5364);
+}
+
+.bg-gradient-cloudy-morning {
+  background: linear-gradient(to bottom, #bdc3c7, #2c3e50);
+}
+.bg-gradient-cloudy-afternoon {
+  background: linear-gradient(to bottom, #757F9A, #D7DDE8);
+}
+.bg-gradient-cloudy-evening {
+  background: linear-gradient(to bottom, #3E5151, #DECBA4);
+}
+.bg-gradient-cloudy-night {
+  background: linear-gradient(to bottom, #141E30, #243B55);
+}
+
+.bg-gradient-rain {
+  background: linear-gradient(to bottom, #3a7bd5, #3a6073);
+}
+
+.bg-gradient-storm {
+  background: linear-gradient(to bottom, #16222A, #3A6073);
+}
+
+.bg-gradient-snow {
+  background: linear-gradient(to bottom, #E0EAFC, #CFDEF3);
+}
+
+.bg-gradient-fog {
+  background: linear-gradient(to bottom, #B9935A, #E7E9BB);
+}
+
+/* Rain and Snow Particle Overlays */
+.weather-particle-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.rain-drop {
+  position: absolute;
+  background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.7));
+  width: 2px;
+  height: 50px;
+  border-radius: 2px;
+  top: -50px;
+}
+
+.snow-flake {
+  position: absolute;
+  background: white;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  top: -10px;
+  filter: blur(1px);
+  opacity: 0.8;
+}
+
+.cloud-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 200%;
+  height: 100%;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 60%);
+  background-size: 500px 500px;
+  opacity: 0.5;
+  pointer-events: none;
+}

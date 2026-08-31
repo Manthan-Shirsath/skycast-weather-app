@@ -17,14 +17,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.core.cache import cache
 from backend.app.core.database import init_db, close_db
 from backend.app.services.collector import collector_worker
+from backend.app.services.forecast_ingestion import forecast_ingestion_worker
 from backend.app.routes.weather import router as weather_router
 from backend.app.routes.map import router as map_router
 from backend.app.routes.chat import router as chat_router
 from backend.app.routes.ws import router as ws_router
 from backend.app.routes.alerts import router as alerts_router
+from backend.app.routes.alerts_subscription import router as alerts_subscription_router
 from backend.app.routes.trends import router as trends_router
+from backend.app.routes.climate import router as climate_router
 from backend.app.routes.agriculture import router as agriculture_router
 from backend.app.routes.recommendations import router as recommendations_router
+from backend.app.routes.system import router as system_router
+from backend.app.routes.forecast_intelligence import router as forecast_intelligence_router
 
 # Configure logging format
 logging.basicConfig(
@@ -40,10 +45,12 @@ async def lifespan(app: FastAPI):
     await cache.initialize()
     await init_db()
     collector_worker.start()
+    forecast_ingestion_worker.start()
     yield
     # Shutdown:
     logger.info("🛑 [SHUTDOWN] Stopping SkyCast Weather Engine...")
     collector_worker.stop()
+    forecast_ingestion_worker.stop()
     await cache.close()
     await close_db()
 
@@ -69,10 +76,13 @@ app.include_router(map_router)
 app.include_router(chat_router)
 app.include_router(ws_router)
 app.include_router(alerts_router)
+app.include_router(alerts_subscription_router)
 app.include_router(trends_router)
+app.include_router(climate_router)
 app.include_router(agriculture_router)
 app.include_router(recommendations_router)
-
+app.include_router(system_router)
+app.include_router(forecast_intelligence_router)
 
 def ensure_single_instance(host: str = "127.0.0.1", port: int = 8000) -> bool:
     """
@@ -82,19 +92,18 @@ def ensure_single_instance(host: str = "127.0.0.1", port: int = 8000) -> bool:
     """
     import socket
     import psutil
-    
+
     current_pid = os.getpid()
-    
-    # 1. Test socket binding
+
+    # 1. Test socket binding by checking connection
     test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    test_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        test_sock.bind((host, port))
-        test_sock.close()
+    result = test_sock.connect_ex((host, port))
+    test_sock.close()
+    
+    if result != 0:
         return True
-    except OSError:
-        test_sock.close()
-        logger.warning("⚠️ Port %d is currently in use. Checking for stale backend processes...", port)
+        
+    logger.warning("⚠️ Port %d is currently in use. Checking for stale backend processes...", port)
 
     # 2. Inspect connections to find PID on port
     stale_pid = None

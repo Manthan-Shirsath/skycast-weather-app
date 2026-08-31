@@ -23,7 +23,18 @@ class CurrentWeatherArgs(BaseModel):
 class ForecastArgs(BaseModel):
     location: str = Field(..., description="City or canonical location name")
     days: Optional[int] = Field(5, description="Number of forecast days to retrieve (1 to 7)")
-    hourly: Optional[bool] = Field(True, description="Whether to include hourly projections for next 24 hours")
+    hourly: Optional[bool] = Field(True, description="Whether to include hourly projections")
+    date: Optional[str] = Field(None, description="Optional target date (e.g. 'tomorrow', 'today', '2026-08-30', 'Saturday')")
+    time: Optional[str] = Field(None, description="Optional specific clock time (e.g. '17:00', '5 PM')")
+    time_range: Optional[str] = Field(None, description="Optional time of day window ('morning', 'afternoon', 'evening', 'night')")
+    activity: Optional[str] = Field(None, description="Optional outdoor activity to evaluate suitability for (e.g. 'cricket', 'hiking')")
+
+
+class AnalyzeRainArgs(BaseModel):
+    location: str = Field(..., description="City or canonical location name")
+    date: Optional[str] = Field(None, description="Optional target date (e.g. 'tomorrow', 'today', '2026-08-30', 'Saturday')")
+    time: Optional[str] = Field(None, description="Optional specific clock time (e.g. '17:00', '5 PM')")
+    time_range: Optional[str] = Field(None, description="Optional time of day window ('morning', 'afternoon', 'evening', 'night')")
 
 
 class RiskArgs(BaseModel):
@@ -65,6 +76,30 @@ class RecommendationArgs(BaseModel):
     activity: Optional[str] = Field("all", description="Activity name ('all', 'umbrella', 'jacket', 'run', 'outdoor_event', 'travel', 'drying_clothes')")
 
 
+class VisualExplanationArgs(BaseModel):
+    phenomenon: str = Field(..., description="The weather phenomenon to explain (e.g. 'rain', 'heat', 'wind')")
+    explanation: str = Field(..., description="A short, clear AI-generated explanation grounded in actual data")
+    visual_type: str = Field(..., description="Visual diagram type: 'rain', 'wind', 'heat', 'clouds', 'pressure', 'storm', 'general'")
+    available_facts: List[str] = Field(..., description="2-3 key facts driving this phenomenon, explicitly based on retrieved weather data")
+    unavailable_facts: List[str] = Field(..., description="Meteorological drivers that you suspect are causes but which were NOT present in the tool data")
+
+class LocationComparisonArgs(BaseModel):
+    locations: List[str] = Field(..., description="List of city names to compare (e.g. ['Pune', 'Mumbai'])")
+    date: Optional[str] = Field(None, description="Optional target date for the comparison")
+    activity: Optional[str] = Field(None, description="Optional activity to evaluate suitability for")
+
+class DateComparisonArgs(BaseModel):
+    location: str = Field(..., description="City name where the comparison takes place")
+    dates: List[str] = Field(..., description="List of dates to compare (e.g. ['Saturday', 'Sunday'])")
+    activity: Optional[str] = Field(None, description="Optional activity to evaluate suitability for")
+
+class AlertExplanationArgs(BaseModel):
+    location: str = Field(..., description="City name where the alert applies")
+    hazard: str = Field(..., description="The main hazard (e.g. 'Heavy Rain', 'Heatwave')")
+    severity: str = Field(..., description="The alert severity (e.g. 'Red', 'Orange', 'Yellow', 'Green')")
+    explanation: str = Field(..., description="AI-generated explanation of the alert and potential impacts")
+    recommendations: List[str] = Field(..., description="AI-generated practical safety recommendations")
+
 # ==============================================================================
 # Tool Execution Output Envelope
 # ==============================================================================
@@ -91,12 +126,18 @@ SUPPORTED_CARD_TYPES = {
     "location",
     "data_status",
     "agriculture",
-    "recommendation"
+    "recommendation",
+    "visual_explanation",
+    "location_comparison",
+    "date_comparison",
+    "weather_alert",
+    "rain_timeline"
 }
 
 class CardItem(BaseModel):
-    type: str = Field(..., description="Controlled card type: 'current_weather', 'forecast', 'risk', 'alert', 'historical', 'comparison', 'location', 'data_status'")
+    type: str = Field(..., description="Controlled card type: 'current_weather', 'forecast', 'risk', 'alert', 'historical', 'comparison', 'location', 'data_status', 'location_comparison', 'date_comparison', 'weather_alert', 'rain_timeline'")
     data: Dict[str, Any] = Field(default_factory=dict)
+
 
 
 class SourceItem(BaseModel):
@@ -117,3 +158,5 @@ class AgentResponse(BaseModel):
     cards: List[CardItem] = Field(default_factory=list)
     sources: List[SourceItem] = Field(default_factory=list)
     data_status: str = "fresh"  # "fresh" | "stale" | "degraded"
+    conversation_context: Optional[Dict[str, Any]] = None
+

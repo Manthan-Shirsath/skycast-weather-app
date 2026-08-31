@@ -4,9 +4,11 @@ All tools interact strictly with WeatherDataHub, HistoryService, and AlertDetect
 Zero external provider calls or direct HTTP requests are made by any tool.
 """
 
+import re
 import datetime
 from typing import Dict, Any, List, Optional
 import logging
+
 
 from backend.app.services.weather_hub import weather_hub
 from backend.app.services.alert_service import alert_service
@@ -22,7 +24,11 @@ from backend.app.services.agent.schemas import (
     MapWeatherArgs,
     FreshnessArgs,
     AgricultureArgs,
-    RecommendationArgs
+    RecommendationArgs,
+    LocationComparisonArgs,
+    DateComparisonArgs,
+    AlertExplanationArgs,
+    AnalyzeRainArgs
 )
 
 logger = logging.getLogger("skycast.agent.tools")
@@ -54,6 +60,58 @@ async def search_location_tool(args: LocationSearchArgs) -> Dict[str, Any]:
         "country": geo.get("country", ""),
         "timezone": geo.get("timezone", "auto")
     }
+
+# ==============================================================================
+# Tool 1b: analyze_rain
+# ==============================================================================
+
+async def analyze_rain_tool(args: AnalyzeRainArgs) -> Dict[str, Any]:
+    """Analyzes rain timing, duration, and dry windows for a given period."""
+    loc_clean = args.location.strip()
+    if not loc_clean:
+        return {"error": "Location is required"}
+
+    data = await weather_hub.get_weather_for_city(loc_clean)
+    hourly_series = data.get("hourlySeries", [])
+    
+    today_iso = datetime.date.today().isoformat()
+    target_date_iso = today_iso
+    
+    if args.date:
+        d_lower = args.date.strip().lower()
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", d_lower):
+            target_date_iso = d_lower
+        elif d_lower in ["tomorrow", "tmrw", "उद्या", "udya"]:
+            target_date_iso = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+        elif d_lower in ["today", "आज", "now"]:
+            target_date_iso = today_iso
+        elif d_lower in ["day_after_tomorrow", "परवा"]:
+            target_date_iso = (datetime.date.today() + datetime.timedelta(days=2)).isoformat()
+        else:
+            # Check weekday
+            for day_word, target_weekday in [
+                ("monday", 0), ("tuesday", 1), ("wednesday", 2), ("thursday", 3),
+                ("friday", 4), ("saturday", 5), ("sunday", 6),
+                ("सोमवार", 0), ("मंगळवार", 1), ("बुधवार", 2), ("गुरुवार", 3),
+                ("शुक्रवार", 4), ("शनिवार", 5), ("रविवार", 6)
+            ]:
+                if day_word in d_lower:
+                    cur_wd = datetime.date.today().weekday()
+                    ahead = (target_weekday - cur_wd) % 7
+                    if ahead == 0:
+                        ahead = 7
+                    target_date_iso = (datetime.date.today() + datetime.timedelta(days=ahead)).isoformat()
+                    break
+
+    from backend.app.services.agent.rain_evaluator import RainEvaluator
+    
+    return RainEvaluator.evaluate_rain(
+        location=data.get("city", loc_clean),
+        date_iso=target_date_iso,
+        time_range=args.time_range,
+        hourly_series=hourly_series
+    )
+
 
 
 # ==============================================================================
@@ -89,6 +147,7 @@ async def get_current_weather_tool(args: CurrentWeatherArgs) -> Dict[str, Any]:
     data = await weather_hub.get_weather_for_city(loc_clean)
     details = data.get("details", {})
     insight = data.get("insight", {})
+    rain_prob = data.get("precipitation_probability", insight.get("rainChance", 0))
 
     return {
         "location": data.get("city", loc_clean),
@@ -98,7 +157,8 @@ async def get_current_weather_tool(args: CurrentWeatherArgs) -> Dict[str, Any]:
         "condition": data.get("condition"),
         "humidity_pct": data.get("humidity"),
         "precipitation_mm": details.get("precipitationMm", 0.0),
-        "rain_chance_pct": insight.get("rainChance", 0),
+        "precipitation_probability": rain_prob,
+        "rain_chance_pct": rain_prob,
         "wind_speed_kmh": data.get("windSpeedKmh"),
         "wind_direction": details.get("windDirection", "N"),
         "pressure_hpa": details.get("pressureHpa", 1013),
@@ -118,7 +178,7 @@ async def get_current_weather_tool(args: CurrentWeatherArgs) -> Dict[str, Any]:
 # ==============================================================================
 
 async def get_forecast_tool(args: ForecastArgs) -> Dict[str, Any]:
-    """Retrieves concise hourly & daily forecast projections from WeatherDataHub."""
+    """Retrieves concise hourly & daily forecast projections from WeatherDataHub with date & time awareness."""
     loc_clean = args.location.strip()
     if not loc_clean:
         return {"error": "Location is required"}
@@ -126,36 +186,290 @@ async def get_forecast_tool(args: ForecastArgs) -> Dict[str, Any]:
     data = await weather_hub.get_weather_for_city(loc_clean)
     days_limit = max(1, min(7, args.days or 5))
 
-    daily_raw = data.get("daily", [])[:days_limit]
-    hourly_raw = data.get("hourly", [])[:12] if args.hourly else []
+    daily_raw = data.get("daily", [])
+    hourly_raw = data.get("hourly", [])
+    hourly_series = data.get("hourlySeries", [])
+
+    today_iso = datetime.date.today().isoformat()
+
+    # 1. Resolve Target Date
+    target_date_iso = today_iso
+    if args.date:
+        d_lower = args.date.strip().lower()
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", d_lower):
+            target_date_iso = d_lower
+        elif d_lower in ["tomorrow", "tmrw", "उद्या", "udya"]:
+            target_date_iso = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+        elif d_lower in ["today", "आज", "now"]:
+            target_date_iso = today_iso
+        elif d_lower in ["day_after_tomorrow", "परवा"]:
+            target_date_iso = (datetime.date.today() + datetime.timedelta(days=2)).isoformat()
+        else:
+            # Check weekday
+            for day_word, target_weekday in [
+                ("monday", 0), ("tuesday", 1), ("wednesday", 2), ("thursday", 3),
+                ("friday", 4), ("saturday", 5), ("sunday", 6),
+                ("सोमवार", 0), ("मंगळवार", 1), ("बुधवार", 2), ("गुरुवार", 3),
+                ("शुक्रवार", 4), ("शनिवार", 5), ("रविवार", 6)
+            ]:
+                if day_word in d_lower:
+                    cur_wd = datetime.date.today().weekday()
+                    ahead = (target_weekday - cur_wd) % 7
+                    if ahead == 0:
+                        ahead = 7
+                    target_date_iso = (datetime.date.today() + datetime.timedelta(days=ahead)).isoformat()
+                    break
+
+    # Find matching daily item
+    target_daily = None
+    for d in daily_raw:
+        if d.get("date_iso") == target_date_iso:
+            target_daily = d
+            break
+    if not target_daily and daily_raw:
+        if target_date_iso == (datetime.date.today() + datetime.timedelta(days=1)).isoformat() and len(daily_raw) > 1:
+            target_daily = daily_raw[1]
+        else:
+            target_daily = daily_raw[0]
+
+    # 2. Extract Specific Date Hourly Slots from hourly_series
+    date_hourly_slots = [
+        h for h in hourly_series
+        if h.get("date") == target_date_iso or str(h.get("time_iso", "")).startswith(target_date_iso)
+    ]
+    if not date_hourly_slots:
+        # Fallback to next 24h slots if multi-day series not available
+        date_hourly_slots = hourly_raw
+
+    # 3. Resolve Target Hour / Specific Time
+    target_hour = None
+    if args.time:
+        t_clean = args.time.strip().lower()
+        m_clock = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", t_clean)
+        if m_clock:
+            hr_val = int(m_clock.group(1))
+            meridiem = m_clock.group(3)
+            if meridiem == "pm" and hr_val < 12:
+                hr_val += 12
+            elif meridiem == "am" and hr_val == 12:
+                hr_val = 0
+            target_hour = hr_val
+
+    # 4. Resolve Target Time Range
+    time_range_key = args.time_range.strip().lower() if args.time_range else None
+    if not time_range_key and target_hour is not None:
+        if 17 <= target_hour <= 21:
+            time_range_key = "evening"
+        elif 6 <= target_hour <= 11:
+            time_range_key = "morning"
+        elif 12 <= target_hour <= 16:
+            time_range_key = "afternoon"
+        elif target_hour >= 22 or target_hour <= 5:
+            time_range_key = "night"
+
+    # 5. Build Period / Hourly Targeted Slice
+    target_period = None
+    if target_hour is not None:
+        # Find exact matching hour slot
+        matched_slot = None
+        for s in date_hourly_slots:
+            s_hr = s.get("hour")
+            if s_hr is None and ":" in str(s.get("time", "")):
+                try:
+                    s_hr = int(str(s.get("time")).split(":")[0])
+                except Exception:
+                    pass
+            if s_hr == target_hour:
+                matched_slot = s
+                break
+
+        if not matched_slot and date_hourly_slots:
+            matched_slot = date_hourly_slots[0]
+
+        if matched_slot:
+            rain_pct = matched_slot.get("precipitation_probability", matched_slot.get("rain_probability_pct", matched_slot.get("rainChance", 0)))
+            precip_mm = matched_slot.get("precipitation_mm", matched_slot.get("precipitation", 0.0))
+            temp_val = matched_slot.get("temperature_c", matched_slot.get("tempC", 25))
+            feels_val = matched_slot.get("feels_like_c", matched_slot.get("feelsLikeC", temp_val))
+            cond_val = matched_slot.get("condition", "Cloudy")
+            wind_val = matched_slot.get("wind_speed_kmh", matched_slot.get("windSpeed", 10))
+
+            # Evaluate activity suitability at this specific hour
+            activity_eval = None
+            if args.activity:
+                act = args.activity.lower()
+                if rain_pct >= 60 or precip_mm >= 1.0:
+                    status = "unfavorable"
+                    reason = f"High rain probability ({round(rain_pct)}%) and wet conditions at {target_hour:02d}:00."
+                    recommendation = f"Playing {act} outdoors is not recommended due to rain/wet ground risk. Consider indoor alternatives."
+                elif rain_pct >= 30 or precip_mm >= 0.3:
+                    status = "marginal"
+                    reason = f"Moderate rain chance ({round(rain_pct)}%) around {target_hour:02d}:00."
+                    recommendation = f"Possible to play {act}, but keep an umbrella handy and check local radar."
+                else:
+                    status = "favorable"
+                    reason = f"Favorable conditions ({cond_val}, {round(temp_val)}°C, rain chance {round(rain_pct)}%) at {target_hour:02d}:00."
+                    recommendation = f"Great time for {act} outdoors!"
+
+                activity_eval = {
+                    "activity": args.activity,
+                    "status": status,
+                    "reason": reason,
+                    "recommendation": recommendation,
+                    "target_date": target_date_iso,
+                    "target_time": f"{target_hour:02d}:00",
+                    "precipitation_probability": round(rain_pct),
+                    "temperature_c": round(temp_val),
+                    "condition": cond_val
+                }
+
+            target_period = {
+                "period_type": "exact_hour",
+                "date": target_date_iso,
+                "hour": f"{target_hour:02d}:00",
+                "temperature_c": round(temp_val),
+                "feels_like_c": round(feels_val),
+                "precipitation_probability": round(rain_pct),
+                "rain_chance_pct": round(rain_pct),  # Exact hourly probability
+                "precipitation_mm": round(precip_mm, 1),
+                "condition": cond_val,
+                "wind_speed_kmh": round(wind_val),
+                "activity_suitability": activity_eval
+            }
+
+    elif time_range_key:
+        range_bounds = {
+            "morning": (6, 11),
+            "afternoon": (12, 16),
+            "evening": (17, 21),
+            "night": (22, 23)
+        }
+        start_hr, end_hr = range_bounds.get(time_range_key, (17, 21))
+        range_slots = [
+            s for s in date_hourly_slots
+            if s.get("hour") is not None and start_hr <= s.get("hour") <= end_hr
+        ]
+        if not range_slots:
+            range_slots = date_hourly_slots[:4]
+
+        if range_slots:
+            avg_temp = sum(s.get("temperature_c", s.get("tempC", 25)) for s in range_slots) / len(range_slots)
+            max_rain = max(s.get("precipitation_probability", s.get("rain_probability_pct", s.get("rainChance", 0))) for s in range_slots)
+            avg_rain = sum(s.get("precipitation_probability", s.get("rain_probability_pct", s.get("rainChance", 0))) for s in range_slots) / len(range_slots)
+            sum_precip = sum(s.get("precipitation_mm", s.get("precipitation", 0.0)) for s in range_slots)
+            rep_cond = range_slots[0].get("condition", "Cloudy")
+
+            activity_eval = None
+            if args.activity:
+                act = args.activity.lower()
+                if max_rain >= 60 or sum_precip >= 1.5:
+                    status = "unfavorable"
+                    reason = f"Rain chance reaches {round(max_rain)}% during {time_range_key} with wet conditions."
+                    recommendation = f"Outdoor {act} is not recommended in the {time_range_key}. Indoor alternative suggested."
+                elif max_rain >= 30:
+                    status = "marginal"
+                    reason = f"Moderate rain chance ({round(max_rain)}%) during {time_range_key}."
+                    recommendation = f"Check local weather radar before starting outdoor {act}."
+                else:
+                    status = "favorable"
+                    reason = f"Good conditions ({rep_cond}, ~{round(avg_temp)}°C, rain chance {round(max_rain)}%) in {time_range_key}."
+                    recommendation = f"{time_range_key.title()} is a good time for {act}."
+
+                activity_eval = {
+                    "activity": args.activity,
+                    "status": status,
+                    "reason": reason,
+                    "recommendation": recommendation,
+                    "target_date": target_date_iso,
+                    "target_time": time_range_key,
+                    "precipitation_probability": round(max_rain),
+                    "temperature_c": round(avg_temp),
+                    "condition": rep_cond
+                }
+
+            target_period = {
+                "period_type": "time_range",
+                "date": target_date_iso,
+                "time_range": time_range_key,
+                "window_hours": f"{start_hr:02d}:00 - {end_hr:02d}:00",
+                "avg_temperature_c": round(avg_temp),
+                "temperature_c": round(avg_temp),
+                "precipitation_probability": round(max_rain),  # Real window max
+                "rain_chance_pct": round(max_rain),
+                "avg_precipitation_probability": round(avg_rain),
+                "avg_rain_chance_pct": round(avg_rain),
+                "total_precipitation_mm": round(sum_precip, 1),
+                "precipitation_mm": round(sum_precip, 1),
+                "condition": rep_cond,
+                "activity_suitability": activity_eval,
+                "slots": range_slots
+            }
+
+    elif args.activity:
+        from backend.app.services.agent.activity_evaluator import ActivityEvaluator
+        best_time_eval = ActivityEvaluator.evaluate_best_time(args.activity, date_hourly_slots, target_date_iso)
+        if best_time_eval:
+            target_period = {
+                "period_type": "best_time",
+                "date": target_date_iso,
+                "hour": best_time_eval.get("recommended_start"),
+                "temperature_c": best_time_eval.get("temperature_c"),
+                "feels_like_c": best_time_eval.get("temperature_c"),
+                "precipitation_probability": best_time_eval.get("precipitation_probability"),
+                "rain_chance_pct": best_time_eval.get("precipitation_probability"),
+                "precipitation_mm": 0.0,
+                "condition": best_time_eval.get("condition"),
+                "wind_speed_kmh": best_time_eval.get("wind", 10),
+                "activity_suitability": best_time_eval
+            }
 
     daily_summary = [
         {
             "day": d.get("day"),
             "date": d.get("date"),
-            "high_c": d.get("highC"),
-            "low_c": d.get("lowC"),
+            "date_iso": d.get("date_iso"),
+            "high_c": d.get("highC", d.get("high_c")),
+            "low_c": d.get("lowC", d.get("low_c")),
             "condition": d.get("condition"),
-            "rain_chance_pct": d.get("rainChance", 0),
-            "precipitation_sum_mm": d.get("precipitationSum", 0.0),
-            "wind_speed_max_kmh": d.get("windSpeedMax", 0.0)
+            "daily_precipitation_probability": d.get("daily_precipitation_probability", d.get("rainChance", d.get("rain_probability_pct", 0))),
+            "precipitation_probability": d.get("daily_precipitation_probability", d.get("rainChance", d.get("rain_probability_pct", 0))),
+            "rain_chance_pct": d.get("daily_precipitation_probability", d.get("rainChance", d.get("rain_probability_pct", 0))),
+            "precipitation_sum_mm": d.get("precipitationSum", d.get("precipitation_sum_mm", 0.0)),
+            "wind_speed_max_kmh": d.get("windSpeedMax", d.get("wind_speed_max_kmh", 0.0))
         }
-        for d in daily_raw
+        for d in daily_raw[:days_limit]
     ]
 
     hourly_summary = [
         {
             "time": h.get("time"),
-            "temperature_c": h.get("tempC"),
-            "feels_like_c": h.get("feelsLikeC"),
+            "temperature_c": h.get("tempC", h.get("temperature_c")),
+            "feels_like_c": h.get("feelsLikeC", h.get("feels_like_c")),
             "condition": h.get("condition"),
-            "rain_chance_pct": h.get("rainChance", 0)
+            "precipitation_probability": h.get("precipitation_probability", h.get("rainChance", h.get("rain_probability_pct", 0))),
+            "rain_chance_pct": h.get("precipitation_probability", h.get("rainChance", h.get("rain_probability_pct", 0)))
         }
-        for h in hourly_raw
+        for h in (date_hourly_slots[:12] if date_hourly_slots else hourly_raw[:12])
     ]
+
+    target_daily_rain = target_daily.get("daily_precipitation_probability", target_daily.get("rainChance", target_daily.get("rain_probability_pct", 0))) if target_daily else 0
 
     return {
         "location": data.get("city", loc_clean),
+        "target_date": target_date_iso,
+        "target_period": target_period,
+        "day_forecast": {
+            "day": target_daily.get("day") if target_daily else "Day",
+            "date": target_daily.get("date") if target_daily else target_date_iso,
+            "date_iso": target_daily.get("date_iso") if target_daily else target_date_iso,
+            "high_c": target_daily.get("highC", target_daily.get("high_c", 28)) if target_daily else 28,
+            "low_c": target_daily.get("lowC", target_daily.get("low_c", 22)) if target_daily else 22,
+            "condition": target_daily.get("condition", "Cloudy") if target_daily else "Cloudy",
+            "daily_precipitation_probability": target_daily_rain,
+            "precipitation_probability": target_daily_rain,
+            "daily_rain_chance_pct": target_daily_rain,
+            "precipitation_sum_mm": target_daily.get("precipitationSum", target_daily.get("precipitation_sum_mm", 0.0)) if target_daily else 0.0
+        } if target_daily else None,
         "daily_forecast": daily_summary,
         "hourly_forecast": hourly_summary,
         "stale": data.get("stale", False),
@@ -163,6 +477,7 @@ async def get_forecast_tool(args: ForecastArgs) -> Dict[str, Any]:
         "nwp_source": data.get("nwpSource", "gfs_seamless"),
         "source": "central_weather_hub"
     }
+
 
 
 # ==============================================================================
@@ -373,4 +688,68 @@ async def get_weather_recommendations_tool(args: RecommendationArgs) -> Dict[str
         city_name=args.location,
         activity=args.activity or "all"
     )
+
+# ==============================================================================
+# Tool 12: show_visual_explanation
+# ==============================================================================
+
+async def show_visual_explanation_tool(args: Any) -> Dict[str, Any]:
+    """
+    Pass-through tool used by the LLM to render a structured visual explanation card AFTER retrieving data.
+    """
+    # In tools.py, arguments are typically unpacked into a Pydantic model by the executor.
+    # Here, we just return the dictionary for the frontend to render.
+    if hasattr(args, 'dict'):
+        return args.dict()
+    elif isinstance(args, dict):
+        return args
+    return {
+        "phenomenon": getattr(args, "phenomenon", "Weather Condition"),
+        "explanation": getattr(args, "explanation", ""),
+        "visual_type": getattr(args, "visual_type", "general"),
+        "available_facts": getattr(args, "available_facts", []),
+        "unavailable_facts": getattr(args, "unavailable_facts", [])
+    }
+
+
+# ==============================================================================
+# Tool 13: compare_locations
+# ==============================================================================
+
+async def compare_locations_tool(args: LocationComparisonArgs) -> Dict[str, Any]:
+    """Compares weather or activity suitability across multiple locations."""
+    from backend.app.services.agent.comparison_evaluator import ComparisonEvaluator
+    
+    if not args.locations or len(args.locations) < 2:
+        return {"error": "At least two locations are required for comparison."}
+        
+    return await ComparisonEvaluator.evaluate_locations(args.locations, args.date, args.activity)
+
+
+# ==============================================================================
+# Tool 14: compare_dates
+# ==============================================================================
+
+async def compare_dates_tool(args: DateComparisonArgs) -> Dict[str, Any]:
+    """Compares weather or activity suitability across multiple dates for a single location."""
+    from backend.app.services.agent.comparison_evaluator import ComparisonEvaluator
+    
+    if not args.location:
+        return {"error": "Location is required for date comparison."}
+        
+    if not args.dates or len(args.dates) < 2:
+        return {"error": "At least two dates are required for comparison."}
+        
+    return await ComparisonEvaluator.evaluate_dates(args.location, args.dates, args.activity)
+
+
+# ==============================================================================
+# Tool 15: show_weather_alert
+# ==============================================================================
+
+async def show_weather_alert_tool(args: AlertExplanationArgs) -> Dict[str, Any]:
+    """Pass-through tool used by the LLM to render a structured alert card AFTER retrieving data."""
+    if hasattr(args, 'dict'):
+        return args.dict()
+    return args
 

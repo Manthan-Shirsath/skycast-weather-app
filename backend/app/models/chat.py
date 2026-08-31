@@ -5,6 +5,7 @@ Stores persistent multi-turn conversational history and tool execution logs.
 
 import uuid
 import datetime
+from enum import Enum
 from sqlalchemy import (
     Column,
     Integer,
@@ -20,6 +21,17 @@ from sqlalchemy.orm import relationship
 from backend.app.models.weather_snapshot import Base
 
 
+class UserRole(str, Enum):
+    """User persona/role for role-adaptive response formatting."""
+    GENERAL_PUBLIC = "general_public"
+    FARMER = "farmer"
+    DISASTER_MANAGER = "disaster_manager"
+    AVIATION = "aviation"
+    RESEARCHER = "researcher"
+    MARINE = "marine"
+    URBAN_PLANNER = "urban_planner"
+
+
 class ChatSession(Base):
     """
     Persistent conversational session for WeatherGPT.
@@ -32,6 +44,7 @@ class ChatSession(Base):
     title = Column(String(255), nullable=True)
     location_context = Column(String(100), nullable=True)
     language = Column(String(20), nullable=False, default="en")
+    user_role = Column(String(50), nullable=False, default=UserRole.GENERAL_PUBLIC.value)
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,
@@ -53,6 +66,7 @@ class ChatSession(Base):
             "title": self.title,
             "locationContext": self.location_context,
             "language": self.language,
+            "userRole": self.user_role,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
             "updatedAt": self.updated_at.isoformat() if self.updated_at else None
         }

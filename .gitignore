@@ -91,3 +91,6 @@ Thumbs.db
 *.db
 *.dump
 postgres_data/
+
+.vercel
+.env*

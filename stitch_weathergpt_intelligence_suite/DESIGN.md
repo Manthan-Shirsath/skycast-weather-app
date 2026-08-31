@@ -159,3 +159,19 @@ Standard components (buttons, small cards) use a **0.5rem (8px)** radius. Larger
 - **Action Buttons:** Primary actions are solid Slate (`#0F172A`). Secondary actions use a ghost-border style with 8px rounding.
 - **Iconography:** Line-based icons with a consistent 2px stroke. Weather icons (Sun, Clouds, Rain) should use a subtle two-tone treatment, using the semantic colors defined in the palette.
 - **Severity Badges:** Must include both a text label (e.g., "HIGH RISK") and a specific icon (e.g., an exclamation triangle) to ensure accessibility for color-blind users.
+
+## 2026 Redesign Update: Monsoon Instrument
+
+The original Stitch-generated baseline has been superseded by the SkyCast **Monsoon Instrument** system documented in `docs/design-system.md`.
+
+What changed:
+
+- The palette moved from generic slate/sky/violet SaaS colors to meteorology-derived tokens: Monsoon Ink, Barometer Blue, Radar Rain, Chart Paper, Monsoon Cloud, and Paddy Field.
+- The IMD green/yellow/orange/red warning model was preserved as a semantic system, with tuned values for legibility on the new chart-paper surfaces.
+- Typography now separates display, body, and data readouts. Data values use a monospaced stack with tabular figures, while the body and display stacks include Noto fallbacks for major Indian scripts.
+- The app now has a signature isobar/station-grid visual language applied through central tokens and global page skinning.
+- WeatherGPT remains visually distinct as model-derived guidance. Official IMD warnings and SkyCast-derived risk language should remain separate in copy and visual treatment.
+
+Why:
+
+The product serves Indian weather, agriculture, and disaster-readiness use cases. The redesign intentionally borrows from synoptic maps, IMD bulletin culture, monsoon conditions, and station instrumentation so SkyCast can be recognized as a meteorological tool rather than a generic dashboard.

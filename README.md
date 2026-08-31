@@ -13,6 +13,7 @@
 ## 🌟 Key Features
 
 - 🛰️ **Live Weather & Geocoding**: Real-time current conditions, hourly forecasts, 7-day outlooks, UV index, air quality metrics, and global city search powered by Open-Meteo.
+- 🧠 **Forecast Intelligence (Methodology-Diverse)**: Compare traditional physics-based models (ECMWF IFS, GFS, ICON) against cutting-edge ML (ECMWF AIFS) and Generative AI ensembles (Google WeatherNext 2) side-by-side.
 - 🤖 **WeatherGPT AI Agent**: Autonomous multi-turn AI weather assistant powered by Google Gemini with tool calling, weather retrieval, route-planning weather insights, and comparative analysis.
 - 🗺️ **Interactive Radar & Satellite Map**: Live precipitation radar overlay using RainViewer with multi-layer controls, wind vectors, temperature heatmaps, and playback time-slider.
 - ⚠️ **Multi-Tier Alert System**: IMD-aligned weather warning framework (Green, Yellow, Orange, Red) detecting severe storms, extreme temperatures, precipitation spikes, and gale-force winds.
@@ -24,7 +25,7 @@
 
 ## 🏗️ Architecture Overview
 
-```
+```text
 weather-app/
 ├── backend/
 │   ├── alembic/                # Database migrations (Alembic)
@@ -38,13 +39,13 @@ weather-app/
 │   ├── .env.example            # Environment variables template
 │   └── README.md               # Backend documentation
 ├── src/
-│   ├── components/             # Reusable UI widgets, badges, navigation, and charts
-│   ├── pages/                  # WeatherGPTPage, RadarMapPage, TrendsPage, etc.
-│   ├── services/               # Frontend API integration & WebSocket handlers
-│   ├── App.jsx                 # Application shell & routing
-│   ├── App.css                 # Layout styles & component themes
-│   ├── index.css               # Design tokens, typography & CSS variables
-│   └── main.jsx
+│   ├── app/                    # Application routing (React Router) & Layouts
+│   ├── components/             # Reusable UI widgets (shadcn/ui style), badges, charts
+│   ├── features/               # Feature-based domains (forecast, map, weathergpt, etc.)
+│   ├── lib/                    # Utility functions and API clients
+│   ├── styles/                 # Global CSS (Tailwind)
+│   ├── App.tsx                 # Application shell
+│   └── main.tsx                # React 19 entry point
 ├── public/                     # Static assets & icons
 ├── docs/                       # Architecture & design documents
 ├── package.json                # Frontend dependencies & run scripts

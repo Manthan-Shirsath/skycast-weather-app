@@ -1,11 +1,10 @@
 """
-Gemini Weather Assistant Service
-Integrates Google Gemini (gemini-2.5-flash / gemini-3.7-flash / gemini-flash-latest) into WeatherGPT.
-Only makes factual claims based on structured backend weather context.
-Never exposes API key to client or logs.
+Groq & Sarvam-compatible Weather Assistant Service.
+Keeps the same structured weather prompt behavior while routing through an OpenAI-compatible chat API.
 """
 
 import os
+import re
 import json
 import logging
 from typing import Dict, Any, List, Optional
@@ -14,10 +13,26 @@ from dotenv import load_dotenv
 
 load_dotenv("backend/.env")
 
-logger = logging.getLogger("skycast.gemini")
+logger = logging.getLogger("skycast.llm_service")
 
-GEMINI_API_KEY = os.getenv("gemini_api_key") or os.getenv("GEMINI_API_KEY", "")
-DEFAULT_MODEL = os.getenv("LLM_MODEL", "gemini-flash-latest")
+LLM_PROVIDER = (os.getenv("LLM_PROVIDER") or "groq").strip().lower()
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+GROQ_MODEL = os.getenv("GROQ_MODEL") or os.getenv("LLM_MODEL") or "openai/gpt-oss-120b"
+
+SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "").strip()
+SARVAM_BASE_URL = os.getenv("SARVAM_BASE_URL", "https://api.sarvam.ai").rstrip("/")
+SARVAM_MODEL = os.getenv("SARVAM_MODEL") or "sarvam-105b"
+
+
+def _resolve_service_defaults():
+    if LLM_PROVIDER == "sarvam":
+        return "sarvam", SARVAM_API_KEY, SARVAM_BASE_URL, SARVAM_MODEL
+    return "groq", GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL
+
+
+DEFAULT_PROVIDER, DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_MODEL = _resolve_service_defaults()
 
 SYSTEM_INSTRUCTION = """You are WeatherGPT, the intelligent meteorological conversational assistant for the Skycast Weather application.
 
@@ -39,12 +54,15 @@ You must follow these strict operational rules:
 
 class GeminiWeatherService:
     """
-    Communicates with Google Generative Language API using strictly structured weather context.
+    Back-compat wrapper; the app uses the Groq / Sarvam OpenAI-compatible backend path while preserving
+    the existing service name to avoid broader code churn.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        self.api_key = api_key or GEMINI_API_KEY
-        self.model = model or DEFAULT_MODEL
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None):
+        self.api_key = DEFAULT_API_KEY if api_key is None else api_key
+        self.base_url = DEFAULT_BASE_URL if base_url is None else base_url.rstrip("/")
+        self.model = DEFAULT_MODEL if model is None else model
+        self.provider = DEFAULT_PROVIDER
 
     async def generate_chat_response(
         self,
@@ -53,89 +71,69 @@ class GeminiWeatherService:
         history: Optional[List[Dict[str, str]]] = None
     ) -> str:
         """
-        Sends structured weather context and user message to Gemini.
+        Sends structured weather context and user message to Groq / Sarvam.
         Falls back gracefully to local rule-based response if API key is missing or network fails.
         """
         if not self.api_key:
-            logger.warning("Gemini API key missing; falling back to structured rule-based response.")
+            logger.warning("[%s] API key missing; falling back to structured rule-based response.", self.provider.upper())
             return self._fallback_rule_response(user_message, weather_context)
 
-        # Prepare messages
-        contents = []
-        
-        # Add conversation history if present
+        messages = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
+
         if history:
-            for turn in history[-6:]:  # Keep last 3 turns
-                role = "user" if turn.get("sender") in ["user", "human"] else "model"
-                contents.append({
+            for turn in history[-6:]:
+                role = "user" if turn.get("sender") in ["user", "human"] else "assistant"
+                messages.append({
                     "role": role,
-                    "parts": [{"text": turn.get("text", "")}]
+                    "content": turn.get("text", "")
                 })
 
-        # Add current user turn with structured context
         context_str = json.dumps(weather_context, indent=2)
         current_turn_prompt = (
             f"=== CURRENT WEATHER CONTEXT ===\n{context_str}\n\n"
             f"=== USER QUERY ===\n{user_message}"
         )
-        contents.append({
+        messages.append({
             "role": "user",
-            "parts": [{"text": current_turn_prompt}]
+            "content": current_turn_prompt
         })
-
-        payload = {
-            "system_instruction": {
-                "parts": [{"text": SYSTEM_INSTRUCTION}]
-            },
-            "contents": contents,
-            "generationConfig": {
-                "temperature": 0.2,
-                "maxOutputTokens": 600,
-                "topP": 0.95
-            }
-        }
-
-        configured_model = os.getenv("LLM_MODEL") or self.model or "gemini-flash-latest"
-        
-        # Primary configured model with fallback models if deprecated/retired
-        models_to_try = [configured_model, "gemini-flash-latest", "gemini-3.5-flash"]
-        unique_models = []
-        for m in models_to_try:
-            if m and m not in unique_models:
-                unique_models.append(m)
 
         import asyncio
         try:
-            async with httpx.AsyncClient(timeout=12.0) as client:
-                for model_name in unique_models:
-                    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
-                    try:
-                        logger.info("Sending request to Gemini model: '%s'", model_name)
-                        res = await asyncio.wait_for(
-                            client.post(endpoint, json=payload),
-                            timeout=10.0
-                        )
-                        if res.status_code == 200:
-                            data = res.json()
-                            candidates = data.get("candidates", [])
-                            if candidates:
-                                parts = candidates[0].get("content", {}).get("parts", [])
-                                if parts:
-                                    reply_text = parts[0].get("text", "").strip()
-                                    if reply_text:
-                                        return reply_text
-                        elif res.status_code == 404:
-                            logger.info("Model '%s' returned 404, trying next candidate...", model_name)
-                            continue
-                        else:
-                            logger.warning("Gemini API error (Status %d): %s", res.status_code, res.text[:200])
-                    except (asyncio.TimeoutError, Exception) as exc:
-                        logger.warning("Gemini request error on model '%s': %s", model_name, exc)
+            async with httpx.AsyncClient(timeout=14.0) as client:
+                endpoint = f"{self.base_url}/chat/completions"
+                headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+                payload = {
+                    "model": self.model,
+                    "stream": False,
+                    "temperature": 0.2,
+                    "max_tokens": 600,
+                    "messages": messages
+                }
+                try:
+                    logger.info("Sending request to %s model: '%s'", self.provider.upper(), self.model)
+                    res = await asyncio.wait_for(
+                        client.post(endpoint, headers=headers, json=payload),
+                        timeout=12.0
+                    )
+                    if res.status_code == 200:
+                        data = res.json()
+                        choices = data.get("choices", [])
+                        if choices:
+                            raw_reply = choices[0].get("message", {}).get("content") or ""
+                            reply_text = re.sub(r'<think>[\s\S]*?</think>', '', raw_reply).strip()
+                            if reply_text:
+                                return reply_text
+                    else:
+                        logger.warning("%s API error (Status %d): %s", self.provider.upper(), res.status_code, res.text[:200])
+                except (asyncio.TimeoutError, Exception) as exc:
+                    logger.warning("%s request error: %s", self.provider.upper(), exc)
         except Exception as client_exc:
-            logger.warning("Gemini client error: %s", client_exc)
+            logger.warning("%s client error: %s", self.provider.upper(), client_exc)
 
         logger.info("Using structured rule response.")
         return self._fallback_rule_response(user_message, weather_context)
+
 
     def _fallback_rule_response(self, query: str, context: Dict[str, Any]) -> str:
         """

@@ -24,7 +24,8 @@ class CanonicalCurrentWeather(BaseModel):
     dew_point_c: Optional[float] = None
     precipitation_mm: float = 0.0
     rain_mm: float = 0.0
-    rain_probability_pct: float = 0.0
+    precipitation_probability: float = 0.0
+    rain_probability_pct: float = 0.0  # legacy compatibility
     wind_speed_kmh: float
     wind_direction_deg: float = 0.0
     wind_direction_label: str = "N"
@@ -45,7 +46,8 @@ class CanonicalHourlyItem(BaseModel):
     feels_like_c: float
     humidity_pct: float
     precipitation_mm: float = 0.0
-    rain_probability_pct: float = 0.0
+    precipitation_probability: float = 0.0
+    rain_probability_pct: float = 0.0  # legacy compatibility
     wind_speed_kmh: float
     wind_direction_label: str = "N"
     cloud_cover_pct: float = 0.0
@@ -60,12 +62,14 @@ class CanonicalHourlyItem(BaseModel):
 class CanonicalDailyItem(BaseModel):
     day: str
     date: str
+    date_iso: Optional[str] = None
     high_c: float
     low_c: float
     condition: str
     icon: str
     weather_code: int = 0
-    rain_probability_pct: float = 0.0
+    daily_precipitation_probability: float = 0.0
+    rain_probability_pct: float = 0.0  # legacy compatibility
     precipitation_sum_mm: float = 0.0
     wind_speed_max_kmh: float = 0.0
     wind_gusts_max_kmh: float = 0.0
@@ -76,6 +80,7 @@ class CanonicalDailyItem(BaseModel):
 
 class CanonicalFreshnessMeta(BaseModel):
     provider: str = "open_meteo"
+    source_provenance: str = "open-meteo"  # "open-meteo" | "imd-wis2" | "blended"
     nwp_source: str = "gfs_seamless"
     nwp_model: str = "NOAA GFS (Global Forecast System)"
     fetched_at: str
@@ -91,12 +96,14 @@ class CanonicalWeatherDataset(BaseModel):
     daily: List[CanonicalDailyItem]
     freshness: CanonicalFreshnessMeta
     alerts: List[Dict[str, Any]] = Field(default_factory=list)
+    hourly_series: List[Dict[str, Any]] = Field(default_factory=list)
 
     def to_legacy_dict(self) -> Dict[str, Any]:
         """
         Serializes dataset to exact dictionary shape expected by existing frontend & services.
-        Ensures 100% backwards compatibility.
+        Ensures 100% backwards compatibility and exposes canonical precipitation fields.
         """
+        curr_prob = round(self.current.precipitation_probability or self.current.rain_probability_pct)
         return {
             "city": self.location.city,
             "region": self.location.region or "",
@@ -116,9 +123,10 @@ class CanonicalWeatherDataset(BaseModel):
             "humidity": round(self.current.humidity_pct),
             "windSpeedKmh": round(self.current.wind_speed_kmh),
             "windSpeedMph": round(self.current.wind_speed_kmh * 0.621371),
+            "precipitation_probability": curr_prob,
             "insight": {
-                "rainChance": round(self.current.rain_probability_pct),
-                "summary": f"{self.current.condition} conditions. Rain probability is {round(self.current.rain_probability_pct)}%."
+                "rainChance": curr_prob,
+                "summary": f"{self.current.condition} conditions. Rain probability is {curr_prob}%."
             },
             "details": {
                 "pressureHpa": round(self.current.pressure_hpa),
@@ -142,7 +150,8 @@ class CanonicalWeatherDataset(BaseModel):
                     "condition": h.condition,
                     "icon": h.icon,
                     "weather_code": h.weather_code,
-                    "rainChance": round(h.rain_probability_pct),
+                    "precipitation_probability": round(h.precipitation_probability or h.rain_probability_pct),
+                    "rainChance": round(h.precipitation_probability or h.rain_probability_pct),
                     "precipitation": round(h.precipitation_mm, 1),
                     "windSpeed": round(h.wind_speed_kmh),
                     "windDirection": h.wind_direction_label,
@@ -158,6 +167,7 @@ class CanonicalWeatherDataset(BaseModel):
                 {
                     "day": d.day,
                     "date": d.date,
+                    "date_iso": d.date_iso,
                     "condition": d.condition,
                     "icon": d.icon,
                     "weather_code": d.weather_code,
@@ -165,7 +175,9 @@ class CanonicalWeatherDataset(BaseModel):
                     "highF": round((d.high_c * 9 / 5) + 32),
                     "lowC": round(d.low_c),
                     "lowF": round((d.low_c * 9 / 5) + 32),
-                    "rainChance": round(d.rain_probability_pct),
+                    "daily_precipitation_probability": round(d.daily_precipitation_probability or d.rain_probability_pct),
+                    "precipitation_probability": round(d.daily_precipitation_probability or d.rain_probability_pct),
+                    "rainChance": round(d.daily_precipitation_probability or d.rain_probability_pct),
                     "precipitationSum": round(d.precipitation_sum_mm, 1),
                     "windSpeedMax": round(d.wind_speed_max_kmh),
                     "windGustsMax": round(d.wind_gusts_max_kmh),
@@ -175,7 +187,10 @@ class CanonicalWeatherDataset(BaseModel):
                 }
                 for d in self.daily
             ],
+            "hourlySeries": self.hourly_series,
             "provider": self.freshness.provider,
+
+            "sourceProvenance": self.freshness.source_provenance,
             "nwpSource": self.freshness.nwp_source,
             "nwpModel": self.freshness.nwp_model,
             "modelSource": self.freshness.nwp_source,

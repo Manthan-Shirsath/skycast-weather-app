@@ -11,11 +11,16 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # AI Model Configuration
-      - LLM_PROVIDER=google
-      - LLM_MODEL=gemini-flash-latest
-      - gemini_api_key=${gemini_api_key:-}
-      - gemini_api_key_fallback=${gemini_api_key_fallback:-}
+      # AI Model Configuration (Groq / Sarvam)
+      - LLM_PROVIDER=${LLM_PROVIDER:-groq}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROQ_BASE_URL=${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      - GROQ_MODEL=${GROQ_MODEL:-openai/gpt-oss-120b}
+      - SARVAM_API_KEY=${SARVAM_API_KEY:-}
+      - SARVAM_API_KEY_FALLBACK=${SARVAM_API_KEY_FALLBACK:-}
+      - SARVAM_BASE_URL=${SARVAM_BASE_URL:-https://api.sarvam.ai}
+      - SARVAM_MODEL=${SARVAM_MODEL:-sarvam-105b}
+
       # Database & Cache URLs (Wired to internal Docker network)
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/skycast_weather
       - REDIS_URL=redis://redis:6379/0
@@ -37,7 +42,7 @@ services:
     networks:
       - skycast-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/docs" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -58,10 +63,12 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    environment:
+      - BACKEND_URL=http://backend:8000
     networks:
       - skycast-net
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -85,7 +92,7 @@ services:
     networks:
       - skycast-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d skycast_weather"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d skycast_weather" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -104,7 +111,7 @@ services:
     networks:
       - skycast-net
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5

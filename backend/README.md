@@ -1,11 +1,14 @@
 # SkyCast FastAPI Backend
 
-Lightweight Python FastAPI backend that interfaces with Open-Meteo API to provide real-time weather forecasts to the SkyCast React frontend.
+Lightweight Python FastAPI backend that interfaces with Open-Meteo API and IMD/WIS2.0 providers to supply real-time weather forecasts to the SkyCast React frontend.
 
 ## Features
 
 - **FastAPI & Uvicorn**: High performance async backend with automatic Swagger UI (`/docs`).
+- **Multi-Provider Architecture**: Pluggable weather providers (Open-Meteo, IMD/WIS2.0, extensible to GFS, WRF, ECMWF).
 - **Open-Meteo Geocoding & Weather Forecast**: Fetches accurate coordinates and live weather metrics.
+- **IMD/WIS2.0 Integration**: Adapter for India Meteorological Department data via WIS2.0 MQTT (mock fixture + live-mode capable).
+- **Data Provenance Tracking**: `source_provenance` field indicates data origin ("open-meteo" | "imd-wis2" | "blended").
 - **Pydantic Validation**: Strong typing and serialization for all endpoints.
 - **WMO Weather Code Decoding**: Maps standard WMO weather codes to human-readable strings and UI icons.
 - **CORS Configured**: Ready for local and production frontend integration.
@@ -26,6 +29,68 @@ or via uvicorn directly:
 ```bash
 uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
 ```
+
+## Weather Data Providers
+
+### Current State (as of SIH PS #26068 alignment)
+
+**Production-Ready:**
+- **Open-Meteo** (default): Free, no-auth global weather data. Currently the primary live provider.
+
+**Demonstration/Mock Mode:**
+- **IMD/WIS2.0**: Reads from fixture file (`backend/app/services/providers/fixtures/wis2_sample_bulletin.json`). MQTT live-mode is architecturally supported but requires real WIS2.0 broker credentials.
+
+### Data Provenance
+
+Every weather response includes a `sourceProvenance` field:
+```json
+{
+  "sourceProvenance": "open-meteo",  // or "imd-wis2", or "blended"
+  "provider": "open_meteo",
+  "nwpSource": "gfs_seamless",
+  "nwpModel": "NOAA GFS (Global Forecast System)",
+  "fetchedAt": "2026-08-29T12:30:45Z"
+}
+```
+
+This directly addresses SIH PS #26068's requirement: **"Why this forecast?"** — evaluators and users can trace any forecast number back to its upstream source.
+
+### Switching Providers
+
+#### Enable IMD/WIS2.0 Live Mode (for future integration with real IMD endpoint)
+
+1. **Obtain WIS2.0 credentials** from IMD (wis2.imdpune.gov.in or designated endpoint)
+2. **Set environment variables** in `backend/.env`:
+   ```
+   IMD_LIVE_MODE=true
+   WIS2_BROKER_URL=wis2.imdpune.gov.in:1883
+   WIS2_USERNAME=your_imd_username
+   WIS2_PASSWORD=your_imd_password
+   ```
+3. **Restart backend**. The IMD provider will automatically connect via MQTT.
+
+#### Development Mode (Fixture)
+
+By default, IMD provider reads from a static fixture:
+```
+backend/app/services/providers/fixtures/wis2_sample_bulletin.json
+```
+
+This fixture mimics real WIS2.0 GRIB2-derived data structure and includes:
+- Current conditions for Pune, Mumbai, New Delhi
+- 24-hour hourly forecast (temperature, precipitation, wind)
+- 7-day daily forecast
+- IMD-tier hazard classifications (Yellow, Orange, Red alerts)
+
+To use: simply leave `IMD_LIVE_MODE=false` (default).
+
+### Adding Future Providers (GFS, WRF, ECMWF)
+
+1. **Create new provider** in `backend/app/services/providers/{provider_name}.py`
+2. **Inherit from** `BaseWeatherProvider` (see `base.py`)
+3. **Implement required methods**: `geocode_city()`, `fetch_forecast()`, `fetch_batch_forecast()`
+4. **Register in weather_hub.py**: Update provider selection logic
+5. **Tests**: Add test file in `backend/tests/` following existing pattern
 
 ## API Specification
 

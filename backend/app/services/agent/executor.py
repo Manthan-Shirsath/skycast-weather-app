@@ -20,7 +20,12 @@ from backend.app.services.agent.schemas import (
     MapWeatherArgs,
     FreshnessArgs,
     AgricultureArgs,
-    RecommendationArgs
+    RecommendationArgs,
+    VisualExplanationArgs,
+    LocationComparisonArgs,
+    DateComparisonArgs,
+    AlertExplanationArgs,
+    AnalyzeRainArgs
 )
 from backend.app.services.agent.tools import (
     search_location_tool,
@@ -33,7 +38,12 @@ from backend.app.services.agent.tools import (
     get_map_weather_tool,
     get_data_freshness_tool,
     get_agriculture_advice_tool,
-    get_weather_recommendations_tool
+    get_weather_recommendations_tool,
+    show_visual_explanation_tool,
+    compare_locations_tool,
+    compare_dates_tool,
+    show_weather_alert_tool,
+    analyze_rain_tool
 )
 
 logger = logging.getLogger("skycast.agent.executor")
@@ -50,6 +60,11 @@ TOOL_REGISTRY: Dict[str, Tuple[Type[BaseModel], Any]] = {
     "get_data_freshness": (FreshnessArgs, get_data_freshness_tool),
     "get_agriculture_advice": (AgricultureArgs, get_agriculture_advice_tool),
     "get_weather_recommendations": (RecommendationArgs, get_weather_recommendations_tool),
+    "show_visual_explanation": (VisualExplanationArgs, show_visual_explanation_tool),
+    "compare_locations": (LocationComparisonArgs, compare_locations_tool),
+    "compare_dates": (DateComparisonArgs, compare_dates_tool),
+    "show_weather_alert": (AlertExplanationArgs, show_weather_alert_tool),
+    "analyze_rain": (AnalyzeRainArgs, analyze_rain_tool)
 }
 
 DEFAULT_TOOL_TIMEOUT_SECONDS = 10.0

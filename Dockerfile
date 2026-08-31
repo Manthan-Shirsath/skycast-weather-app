@@ -30,8 +30,9 @@ RUN rm -rf ./*
 # Copy built production assets from builder stage
 COPY --from=builder /app/dist .
 
-# Copy custom Nginx SPA and reverse proxy configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Nginx substitutes BACKEND_URL at container startup.
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+ENV BACKEND_URL=http://127.0.0.1:8000
 
 EXPOSE 80
 

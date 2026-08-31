@@ -24,44 +24,101 @@ from backend.app.services.agent.schemas import (
     AgentResponse,
     CardItem,
     SourceItem,
-    ToolExecutionResult
+    ToolExecutionResult,
+    ForecastArgs
 )
 from backend.app.services.agent.executor import ToolExecutor
+from backend.app.services.agent.tools import get_forecast_tool
+from backend.app.services.agent.context import (
+    ConversationContext,
+    conversation_context_tracker,
+    format_marathi_weather_reply
+)
+
 from backend.app.services.agent.prompts import (
     SYSTEM_INSTRUCTION,
-    GEMINI_TOOLS_DECLARATION
+    GEMINI_TOOLS_DECLARATION,
+    get_role_system_prompt_suffix,
+    format_response_by_role
 )
+
 
 load_dotenv("backend/.env")
 
 logger = logging.getLogger("skycast.agent")
 
-GEMINI_API_KEY = os.getenv("gemini_api_key") or os.getenv("GEMINI_API_KEY", "")
-GEMINI_API_KEY_FALLBACK = os.getenv("gemini_api_key_fallback") or os.getenv("GEMINI_API_KEY_FALLBACK", "")
-DEFAULT_MODEL = os.getenv("LLM_MODEL", "gemini-flash-latest")
+# Provider settings
+LLM_PROVIDER = (os.getenv("LLM_PROVIDER") or "groq").strip().lower()
+
+# Groq Configuration (Default / Active)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+GROQ_API_KEY_FALLBACK = os.getenv("GROQ_API_KEY_FALLBACK", "").strip()
+GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+GROQ_MODEL = os.getenv("GROQ_MODEL") or os.getenv("LLM_MODEL") or "openai/gpt-oss-120b"
+
+# Sarvam Configuration (Supported alternative)
+SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "").strip()
+SARVAM_API_KEY_FALLBACK = os.getenv("SARVAM_API_KEY_FALLBACK", "").strip()
+SARVAM_BASE_URL = os.getenv("SARVAM_BASE_URL", "https://api.sarvam.ai").rstrip("/")
+SARVAM_MODEL = os.getenv("SARVAM_MODEL") or "sarvam-105b"
+
+
+def _resolve_provider_settings(provider: Optional[str] = None):
+    """
+    Resolve active provider, API key, base URL, model, and fallback key.
+    Defaults to Groq with openai/gpt-oss-120b, while keeping Sarvam fully configurable.
+    """
+    p = (provider or LLM_PROVIDER or "groq").strip().lower()
+    if p == "sarvam":
+        api_key = SARVAM_API_KEY
+        fallback_key = SARVAM_API_KEY_FALLBACK
+        base_url = SARVAM_BASE_URL
+        configured_model = os.getenv("SARVAM_MODEL") or os.getenv("LLM_MODEL") or "sarvam-105b"
+        model = configured_model if "gemini" not in configured_model.lower() else "sarvam-105b"
+    else:
+        p = "groq"
+        api_key = GROQ_API_KEY
+        fallback_key = GROQ_API_KEY_FALLBACK
+        base_url = GROQ_BASE_URL
+        configured_model = os.getenv("GROQ_MODEL") or os.getenv("LLM_MODEL") or "openai/gpt-oss-120b"
+        if configured_model and ("gemini" in configured_model.lower() or "sarvam" in configured_model.lower()):
+            model = "openai/gpt-oss-120b"
+        else:
+            model = configured_model or "openai/gpt-oss-120b"
+    return p, api_key, base_url, model, fallback_key
+
+
+DEFAULT_PROVIDER, DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_FALLBACK_KEY = _resolve_provider_settings()
 MAX_TOOL_CALLS = int(os.getenv("MAX_TOOL_CALLS", "8"))
 
 
 class WeatherGPTAgent:
     """
-    Intelligent AI Agent for WeatherGPT with Gemini Function Calling and Central Data Grounding.
+    Intelligent AI Agent for WeatherGPT with Groq / OpenAI-compatible Function Calling,
+    Central Weather Hub Grounding, and Multi-turn Reasoning.
     """
 
     def __init__(
         self,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
+        base_url: Optional[str] = None,
+        provider: Optional[str] = None,
         max_tool_calls: int = MAX_TOOL_CALLS
     ):
-        self.api_key = GEMINI_API_KEY if api_key is None else api_key
-        self.api_key_fallback = GEMINI_API_KEY_FALLBACK
-        self.model = DEFAULT_MODEL if model is None else model
+        p, default_key, default_base, default_model, fallback_key = _resolve_provider_settings(provider)
+        self.provider = provider or p
+        self.api_key = default_key if api_key is None else api_key
+        self.api_key_fallback = fallback_key
+        self.base_url = default_base if base_url is None else base_url.rstrip("/")
+        self.model = default_model if model is None else model
         self.max_tool_calls = max_tool_calls
         logger.info(
-            "🤖 [INIT] WeatherGPT Agent initialized with model: '%s' (max_tool_calls=%d, api_key_configured=%s)",
+            "🤖 [INIT] WeatherGPT Agent initialized with provider='%s', model='%s' (max_tool_calls=%d, api_key_configured=%s)",
+            self.provider,
             self.model,
             self.max_tool_calls,
-            bool(self.api_key and len(self.api_key) > 10)
+            bool(self.api_key and len(self.api_key) > 5)
         )
 
     async def run(
@@ -69,10 +126,13 @@ class WeatherGPTAgent:
         message: str,
         session_id: Optional[str] = None,
         default_city: Optional[str] = None,
-        language: str = "en"
+        language: str = "en",
+        user_role: str = "general_public",
+        ui_context: Optional[Dict[str, Any]] = None
     ) -> AgentResponse:
         """
         Executes the agent lifecycle for a user message.
+        Supports role-adaptive response formatting (general_public, farmer, disaster_manager, etc.).
         """
         user_text = (message or "").strip()
         if not user_text:
@@ -87,49 +147,63 @@ class WeatherGPTAgent:
         session_id, location_context, history_turns = await self._load_session_context(
             session_id=session_id,
             default_city=default_city,
+            language=language,
+            user_role=user_role
+        )
+
+        # 2. Deterministically resolve ConversationContext state
+        context = conversation_context_tracker.resolve_context(
+            session_id=session_id,
+            user_text=user_text,
+            default_city=location_context or default_city,
             language=language
         )
 
-        active_city = location_context or default_city or "Pune"
+        active_city = context.location or location_context or default_city or "Pune"
 
-        # Check if user mentioned an explicit new city
-        extracted_city = self._detect_city_in_query(user_text)
-        if extracted_city and extracted_city.lower() != active_city.lower():
-            active_city = extracted_city
-            # Update session location context in DB
-            await self._update_session_location(session_id, active_city)
+        # Update session location context in DB
+        if context.location and context.location != location_context:
+            await self._update_session_location(session_id, context.location)
 
-        # 2. Check for Gemini Availability
-        if not self.api_key or len(self.api_key) < 20:
-            logger.info("Gemini API key not configured; using deterministic centralized fallback.")
-            return await self._execute_deterministic_fallback(
-                user_text=user_text,
-                city=active_city,
-                session_id=session_id,
-                history_turns=history_turns,
-                language=language
-            )
-
-        # 3. Execute Gemini Function Calling Loop
-        try:
-            agent_response = await self._run_gemini_loop(
-                user_text=user_text,
-                session_id=session_id,
-                active_city=active_city,
-                history_turns=history_turns,
-                language=language
-            )
-            return agent_response
-        except Exception as exc:
-            logger.warning("Gemini agent loop encountered error: %s; falling back to centralized rules", exc)
+        # 3. Check for LLM availability - fallback smoothly if unconfigured
+        if not self.api_key or len(self.api_key) < 5:
+            logger.info("ℹ️ [%s] API key not configured. Using deterministic fallback.", self.provider.upper())
             return await self._execute_deterministic_fallback(
                 user_text=user_text,
                 city=active_city,
                 session_id=session_id,
                 history_turns=history_turns,
                 language=language,
-                degraded=True
+                user_role=user_role,
+                context=context
             )
+
+        # 4. Execute LLM Function Calling Loop
+        try:
+            agent_response = await self._run_llm_loop(
+                user_text=user_text,
+                session_id=session_id,
+                active_city=active_city,
+                history_turns=history_turns,
+                language=language,
+                user_role=user_role,
+                context=context,
+                ui_context=ui_context
+            )
+            return agent_response
+        except Exception as exc:
+            logger.warning("⚠️ [%s] Request or processing failed (%s). Gracefully falling back to deterministic response.", self.provider.upper(), exc)
+            return await self._execute_deterministic_fallback(
+                user_text=user_text,
+                city=active_city,
+                session_id=session_id,
+                history_turns=history_turns,
+                language=language,
+                user_role=user_role,
+                degraded=True,
+                context=context
+            )
+
 
     @staticmethod
     def _detect_city_in_query(text: str) -> Optional[str]:
@@ -160,70 +234,156 @@ class WeatherGPTAgent:
         "or": "Odia (ଓଡ଼ିଆ)",
     }
 
-    def _build_system_instruction(self, language: str) -> str:
-        """Prepend a response-language directive to the base system instruction."""
+    def _build_system_instruction(
+        self,
+        language: str,
+        user_role: str = "general_public",
+        context: Optional[ConversationContext] = None,
+        ui_context: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Construct complete system instruction with language directive, role-adaptive formatting,
+        and deterministically resolved conversation context.
+        """
         lang_name = self._LANG_NAMES.get(language, "English")
-        if language == "en":
-            return SYSTEM_INSTRUCTION
-        directive = (
-            f"RESPONSE LANGUAGE DIRECTIVE (HIGHEST PRIORITY):\n"
-            f"The user interface is set to {lang_name}. "
-            f"You MUST respond entirely in {lang_name}. "
-            f"All your narrative text, explanations, recommendations, and advisory paragraphs must be written in {lang_name}. "
-            f"Keep all numeric values (temperatures in °C, wind speed in km/h, percentages) as-is. "
-            f"Do NOT respond in English unless the user's message itself is in English.\n\n"
-        )
-        return directive + SYSTEM_INSTRUCTION
 
-    async def _run_gemini_loop(
+        # Start with base instruction
+        system_text = SYSTEM_INSTRUCTION
+
+        # Add UI context if available
+        if ui_context:
+            ui_directive = f"\n=== USER INTERFACE CONTEXT ===\n"
+            ui_directive += f"The user is currently viewing the following in the UI:\n"
+            for k, v in ui_context.items():
+                ui_directive += f"- {k}: {v}\n"
+            ui_directive += "Use this context to inform your response if the user's query is ambiguous or refers to 'this', 'here', or 'current page'.\n\n"
+            system_text = ui_directive + system_text
+
+        # Add structured conversation context if available
+        if context and context.location:
+            time_info = context.time or context.time_range or "full day"
+            activity_info = f" (Activity: {context.activity})" if context.activity else ""
+            ctx_directive = (
+                f"\n=== STRUCTURED CONVERSATION STATE (DETERMINISTICALLY RESOLVED) ===\n"
+                f"- Active Location: {context.location}\n"
+                f"- Target Date: {context.date_expression} ({context.resolved_date})\n"
+                f"- Target Time Window: {time_info}{activity_info}\n"
+                f"- Inferred Intent: {context.weather_intent}\n\n"
+                f"STRICT DIRECTIVES:\n"
+                f"1. The user's query pertains to '{context.location}'. NEVER ask the user what city or location they mean; it is already resolved.\n"
+                f"2. You MUST invoke the appropriate tool (e.g. get_forecast, get_weather_recommendations, or get_current_weather) for '{context.location}'.\n"
+                f"3. For date '{context.date_expression}' (e.g. tomorrow, Saturday, evening, 5 PM), use 'get_forecast' to retrieve conditions.\n"
+                f"4. If evaluating suitability for '{context.activity or 'an activity'}' at '{time_info}', synthesize the temperature, rain probability, wind, and sky condition for that time window to give an explicit recommendation.\n\n"
+            )
+            system_text = ctx_directive + system_text
+
+        # Add language directive if not English
+        if language != "en":
+            directive = (
+                f"RESPONSE LANGUAGE DIRECTIVE (HIGHEST PRIORITY):\n"
+                f"The user interface is set to {lang_name}. "
+                f"You MUST respond entirely in {lang_name}. "
+                f"All your narrative text, explanations, recommendations, and advisory paragraphs must be written in {lang_name}. "
+                f"Keep all numeric values (temperatures in °C, wind speed in km/h, percentages) as-is. "
+                f"Do NOT respond in English unless the user's message itself is in English.\n\n"
+            )
+            system_text = directive + system_text
+
+        # Add role-adaptive formatting suffix
+        role_suffix = get_role_system_prompt_suffix(user_role)
+        system_text = system_text + "\n" + role_suffix
+
+        return system_text
+
+
+    @staticmethod
+    def _convert_tools_to_openai(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Convert the existing Gemini tool schema into the OpenAI-compatible format Sarvam expects."""
+        converted: List[Dict[str, Any]] = []
+        for tool in tools:
+            if "function_declarations" in tool:
+                for declaration in tool["function_declarations"]:
+                    converted.append({
+                        "type": "function",
+                        "function": {
+                            "name": declaration.get("name", ""),
+                            "description": declaration.get("description", ""),
+                            "parameters": declaration.get("parameters", {"type": "object", "properties": {}})
+                        }
+                    })
+            elif tool.get("type") == "function" and "function" in tool:
+                converted.append(tool)
+        return converted
+
+    @staticmethod
+    def _clean_reply_text(content: Optional[str]) -> str:
+        """Strip internal reasoning tags (e.g. <think>...</think>) and leading/trailing whitespace."""
+        if not content:
+            return ""
+        # Remove <think>...</think> blocks including multi-line content
+        cleaned = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+        return cleaned
+
+    def _build_openai_payload(
+        self,
+        messages: List[Dict[str, Any]],
+        system_instruction: str,
+        tools: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """Construct OpenAI-compatible chat completion payload for Groq / Sarvam."""
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "stream": False,
+            "temperature": 0.2,
+            "max_tokens": 900,
+            "top_p": 0.95,
+            "messages": [{"role": "system", "content": system_instruction}, *messages]
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        return payload
+
+    def _build_sarvam_payload(
+        self,
+        messages: List[Dict[str, Any]],
+        system_instruction: str,
+        tools: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """Backward-compatible alias for _build_openai_payload."""
+        return self._build_openai_payload(messages, system_instruction, tools)
+
+    async def _run_llm_loop(
         self,
         user_text: str,
         session_id: str,
         active_city: str,
         history_turns: List[Dict[str, Any]],
-        language: str = "en"
+        language: str = "en",
+        user_role: str = "general_public",
+        context: Optional[ConversationContext] = None,
+        ui_context: Optional[Dict[str, Any]] = None
     ) -> AgentResponse:
         """
-        Runs bounded multi-turn tool calling loop with Gemini.
+        Runs a bounded multi-turn tool calling loop against Groq / Sarvam's OpenAI-compatible chat completions API.
+        Extracts clean content without exposing internal reasoning traces (<think>...</think> or reasoning_content).
         """
-        contents: List[Dict[str, Any]] = []
+        messages: List[Dict[str, Any]] = []
 
         for h in history_turns[-6:]:
-            role = "user" if h.get("role") in ["user", "human"] else "model"
-            contents.append({
+            role = "user" if h.get("role") in ["user", "human"] else "assistant"
+            messages.append({
                 "role": role,
-                "parts": [{"text": h.get("content", "")}]
+                "content": h.get("content", "")
             })
 
-        contents.append({
+        messages.append({
             "role": "user",
-            "parts": [{"text": user_text}]
+            "content": user_text
         })
 
-        payload = {
-            "system_instruction": {
-                "parts": [{"text": self._build_system_instruction(language)}]
-            },
-            "contents": contents,
-            "tools": [
-                {
-                    "function_declarations": GEMINI_TOOLS_DECLARATION
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.2,
-                "maxOutputTokens": 900,
-                "topP": 0.95
-            }
-        }
-
-        configured_model = os.getenv("LLM_MODEL") or self.model or "gemini-flash-latest"
-        models_to_try = [configured_model, "gemini-flash-latest", "gemini-3.5-flash"]
-        unique_models = []
-        for m in models_to_try:
-            if m and m not in unique_models:
-                unique_models.append(m)
-
+        system_instruction = self._build_system_instruction(language, user_role, context=context, ui_context=ui_context)
+        tools = self._convert_tools_to_openai([{"function_declarations": GEMINI_TOOLS_DECLARATION}])
         tool_calls_executed = 0
         executed_cards: List[CardItem] = []
         sources: List[SourceItem] = [
@@ -235,59 +395,78 @@ class WeatherGPTAgent:
         ]
         resolved_city = active_city
 
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=14.0) as client:
             for iteration in range(self.max_tool_calls + 1):
                 response_data = None
-
-                # Build ordered list of (api_key, model) pairs to attempt.
-                # Primary key first; fallback key injected when primary hits 429.
                 keys_to_try = [self.api_key]
-                if self.api_key_fallback and self.api_key_fallback != self.api_key and len(self.api_key_fallback) > 20:
+                if self.api_key_fallback and self.api_key_fallback != self.api_key and len(self.api_key_fallback) > 5:
                     keys_to_try.append(self.api_key_fallback)
+
+                endpoint = f"{self.base_url}/chat/completions"
+                # Token optimization: supply tools on initial turn (when tool_calls_executed == 0).
+                # Once tool results are present, omit tools so the model synthesizes the final answer without consuming tool tokens.
+                active_tools = tools if tool_calls_executed == 0 else None
+                payload = self._build_openai_payload(messages, system_instruction, active_tools)
+
 
                 for api_key in keys_to_try:
                     if response_data:
                         break
-                    for model_name in unique_models:
-                        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-                        try:
-                            res = await client.post(endpoint, json=payload, timeout=5.0)
-                            if res.status_code == 200:
-                                response_data = res.json()
-                                if api_key == self.api_key_fallback:
-                                    logger.info("[KEY ROTATION] Using fallback Gemini key (primary quota exhausted).")
-                                break
-                            elif res.status_code == 429:
-                                logger.warning("[429] Quota exceeded on key ...%s model '%s' — trying next.", api_key[-6:], model_name)
-                                continue  # try next model / next key
-                            elif res.status_code == 404:
-                                continue
-                            else:
-                                logger.warning("Gemini error (%d): %s", res.status_code, res.text[:200])
-                        except Exception as req_err:
-                            logger.warning("Request failed to Gemini model '%s': %s", model_name, req_err)
+                    try:
+                        logger.info("📡 [%s] Sending chat completion request (model='%s', iteration=%d)", self.provider.upper(), payload.get("model"), iteration)
+                        res = await client.post(
+                            endpoint,
+                            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                            json=payload,
+                            timeout=12.0
+                        )
+                        if res.status_code == 200:
+                            response_data = res.json()
+                            logger.info("✓ [%s] Response received successfully (200 OK)", self.provider.upper())
+                            break
+                        else:
+                            logger.warning("⚠️ [%s] API error (Status %d): %s", self.provider.upper(), res.status_code, res.text[:300])
+                    except Exception as req_err:
+                        logger.warning("⚠️ [%s] Network/request error: %s", self.provider.upper(), req_err)
 
                 if not response_data:
-                    raise RuntimeError("Failed to communicate with any Gemini model endpoint.")
+                    logger.warning("⚠️ [%s] Could not obtain valid LLM response. Invoking deterministic fallback.", self.provider.upper())
+                    return await self._execute_deterministic_fallback(
+                        user_text=user_text,
+                        city=resolved_city,
+                        session_id=session_id,
+                        history_turns=history_turns,
+                        language=language,
+                        user_role=user_role,
+                        degraded=True,
+                        context=context
+                    )
 
-                candidates = response_data.get("candidates", [])
-                if not candidates:
-                    raise RuntimeError("Gemini returned empty candidates.")
+                choices = response_data.get("choices", [])
+                if not choices:
+                    logger.warning("⚠️ [%s] Empty choices returned. Invoking deterministic fallback.", self.provider.upper())
+                    return await self._execute_deterministic_fallback(
+                        user_text=user_text,
+                        city=resolved_city,
+                        session_id=session_id,
+                        history_turns=history_turns,
+                        language=language,
+                        user_role=user_role,
+                        degraded=True,
+                        context=context
+                    )
 
-                candidate_content = candidates[0].get("content", {})
-                parts = candidate_content.get("parts", [])
 
-                function_calls = [p.get("functionCall") for p in parts if "functionCall" in p]
+                message = choices[0].get("message", {})
+                raw_content = message.get("content") or ""
+                # Strip internal reasoning traces from content & never expose reasoning_content to frontend
+                assistant_text = self._clean_reply_text(raw_content)
+                tool_calls = message.get("tool_calls") or []
 
-                if not function_calls or tool_calls_executed >= self.max_tool_calls:
-                    text_parts = [p.get("text", "") for p in parts if "text" in p]
-                    reply_text = "".join(text_parts).strip()
-                    if not reply_text:
-                        reply_text = "I have retrieved the centralized weather data for your request."
-
+                if not tool_calls or tool_calls_executed >= self.max_tool_calls:
+                    reply_text = assistant_text or "I have retrieved the centralized weather data for your request."
                     await self._save_message(session_id, "user", user_text)
                     await self._save_message(session_id, "model", reply_text)
-
                     return AgentResponse(
                         reply=reply_text,
                         city=resolved_city,
@@ -295,18 +474,64 @@ class WeatherGPTAgent:
                         session_id=session_id,
                         cards=executed_cards,
                         sources=sources,
-                        data_status="fresh"
+                        data_status="fresh",
+                        conversation_context=context.to_summary_dict() if context else None
                     )
 
-                contents.append(candidate_content)
 
-                tool_response_parts = []
-                for fc in function_calls:
-                    tool_name = fc.get("name")
-                    tool_args = fc.get("args", {})
+                messages.append({
+                    "role": "assistant",
+                    "content": raw_content,
+                    "tool_calls": tool_calls
+                })
+
+                for tool_call in tool_calls:
+                    tool_name = tool_call.get("function", {}).get("name")
+                    tool_args_raw = tool_call.get("function", {}).get("arguments", "")
+                    try:
+                        tool_args = json.loads(tool_args_raw) if isinstance(tool_args_raw, str) else (tool_args_raw or {})
+                    except json.JSONDecodeError as parse_err:
+                        logger.warning("Tool call parsing error for %s: %s", tool_name, parse_err)
+                        tool_args = {}
+
+                    # Intercept and redirect current weather calls if context is for a future date / time range / activity
+                    is_temporal_or_activity_context = context and (
+                        context.date != "today" or
+                        context.time_range is not None or
+                        context.time is not None or
+                        context.activity is not None or
+                        context.weather_intent in ["forecast", "activity_suitability", "rain_check"]
+                    )
+                    user_explicit_current = any(w in user_text.lower() for w in ["right now", "currently", "now", "current weather", "सध्या", "आत्ता"])
+
+                    if tool_name in ["get_current_weather", "get_weather_recommendations"] and is_temporal_or_activity_context and not user_explicit_current:
+                        logger.info("🔄 [TOOL UPGRADE] Redirecting %s -> get_forecast with resolved context (date=%s, time_range=%s, activity=%s)",
+                                    tool_name, context.resolved_date, context.time_range, context.activity)
+                        tool_name = "get_forecast"
+                        tool_args["location"] = tool_args.get("location") or context.location or active_city
+                        tool_args["date"] = context.resolved_date
+                        if context.time:
+                            tool_args["time"] = context.time
+                        if context.time_range:
+                            tool_args["time_range"] = context.time_range
+                        if context.activity:
+                            tool_args["activity"] = context.activity
+
+                    # Contextual argument enrichment for get_forecast
+                    if tool_name == "get_forecast" and context:
+                        if "location" not in tool_args or not tool_args["location"]:
+                            tool_args["location"] = context.location or active_city
+                        if context.resolved_date:
+                            tool_args["date"] = context.resolved_date
+                        if context.time:
+                            tool_args["time"] = context.time
+                        if context.time_range:
+                            tool_args["time_range"] = context.time_range
+                        if context.activity:
+                            tool_args["activity"] = context.activity
+
                     tool_calls_executed += 1
-
-                    logger.info("Executing Tool [%d/%d]: %s(%s)", tool_calls_executed, self.max_tool_calls, tool_name, tool_args)
+                    logger.info("⚙️ Tool [%d/%d]: %s(%s)", tool_calls_executed, self.max_tool_calls, tool_name, tool_args)
 
                     exec_res = await ToolExecutor.execute(tool_name, tool_args)
 
@@ -317,29 +542,43 @@ class WeatherGPTAgent:
                             resolved_city = exec_res.data["name"]
 
                     if exec_res.success and exec_res.data:
-                        card_type = self._map_tool_to_card_type(tool_name)
-                        if card_type:
-                            executed_cards.append(CardItem(type=card_type, data=exec_res.data if isinstance(exec_res.data, dict) else {"result": exec_res.data}))
+                        if tool_name == "get_forecast" and isinstance(exec_res.data, dict):
+                            target_p = exec_res.data.get("target_period")
+                            act_eval = target_p.get("activity_suitability") if target_p else None
+                            if act_eval:
+                                executed_cards.append(CardItem(type="activity_suitability", data=act_eval))
+                            elif target_p and (target_p.get("period_type") in ["time_range", "exact_hour"] or exec_res.data.get("hourly_forecast")):
+                                executed_cards.append(CardItem(type="hourly_forecast", data=exec_res.data))
+                            else:
+                                executed_cards.append(CardItem(type="forecast", data=exec_res.data))
+                        else:
+                            card_type = self._map_tool_to_card_type(tool_name)
+                            if card_type:
+                                executed_cards.append(CardItem(type=card_type, data=exec_res.data if isinstance(exec_res.data, dict) else {"result": exec_res.data}))
 
-                    tool_response_parts.append({
-                        "functionResponse": {
-                            "name": tool_name,
-                            "response": {
-                                "success": exec_res.success,
-                                "data": exec_res.data,
-                                "error": exec_res.error
-                            }
-                        }
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.get("id", str(uuid.uuid4())),
+                        "name": tool_name,
+                        "content": json.dumps({
+                            "success": exec_res.success,
+                            "data": exec_res.data,
+                            "error": exec_res.error
+                        })
                     })
 
-                contents.append({
-                    "role": "user",
-                    "parts": tool_response_parts
-                })
+        return await self._execute_deterministic_fallback(
+            user_text=user_text,
+            city=resolved_city,
+            session_id=session_id,
+            history_turns=history_turns,
+            language=language,
+            user_role=user_role
+        )
 
-                payload["contents"] = contents
+    # Backwards-compatible alias for tests and existing callers
+    _run_gemini_loop = _run_llm_loop
 
-        return await self._execute_deterministic_fallback(user_text, resolved_city, session_id, history_turns=history_turns, language=language)
 
     @staticmethod
     def _map_tool_to_card_type(tool_name: str) -> Optional[str]:
@@ -353,7 +592,12 @@ class WeatherGPTAgent:
             "search_location": "location",
             "get_data_freshness": "data_status",
             "get_agriculture_advice": "agriculture",
-            "get_weather_recommendations": "recommendation"
+            "get_weather_recommendations": "recommendation",
+            "show_visual_explanation": "visual_explanation",
+            "compare_locations": "location_comparison",
+            "compare_dates": "date_comparison",
+            "show_weather_alert": "weather_alert",
+            "analyze_rain": "rain_timeline"
         }
         return mapping.get(tool_name)
 
@@ -447,15 +691,29 @@ class WeatherGPTAgent:
         session_id: Optional[str] = None,
         history_turns: Optional[List[Dict[str, Any]]] = None,
         language: str = "en",
-        degraded: bool = False
+        user_role: str = "general_public",
+        degraded: bool = False,
+        context: Optional[ConversationContext] = None
     ) -> AgentResponse:
         """
         Deterministic, rule-based fallback answering from WeatherDataHub when LLM is unavailable.
         Provides multilingual replies for common queries using _FALLBACK_PHRASES.
+        Supports role-adaptive formatting through role parameter.
         """
         q = user_text.lower()
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
+        if not city:
+            msg = "कृपया हवामानाची माहिती जाणून घेण्यासाठी शहर किंवा ठिकाणाचे नाव सांगा." if language == "mr" else "Please specify which city or location you would like to check the weather for."
+            return AgentResponse(
+                reply=msg,
+                city="",
+                timestamp=now_iso,
+                session_id=session_id,
+                cards=[],
+                sources=[SourceItem(type="central_weather_data", timestamp=now_iso, provider="open_meteo")],
+                data_status="degraded" if degraded else "fresh"
+            )
 
         # Handle comparisons (e.g. "Compare it with Mumbai" or "Which city has higher chance of rain")
         secondary_city = None
@@ -476,22 +734,111 @@ class WeatherGPTAgent:
         alerts_data = await alert_service.get_alerts_for_city(city, weather_data)
         active_alerts = alerts_data.get("alerts", [])
 
-        cards = [
-            CardItem(
-                type="current_weather",
-                data={
-                    "city": city,
-                    "temperature": temp,
-                    "feelsLike": feels,
-                    "condition": cond,
-                    "humidity": humidity,
-                    "windSpeed": wind,
-                    "rainChance": rain_chance
-                }
-            )
-        ]
+        cards: List[CardItem] = []
 
-        if "spray" in q or "crop" in q or "cotton" in q or "farm" in q or "irrigation" in q or "sheti" in q:
+        # Activity Suitability (Cricket / Outdoor Sports / 5 PM / Evening)
+        is_cricket = (context and context.activity == "cricket") or "cricket" in q or "खेळायला" in q or "play" in q
+        is_forecast_query = (
+            is_cricket
+            or "tomorrow" in q or "udya" in q or "kal" in q
+            or (context and context.date != "today")
+            or "evening" in q or "संध्याकाळ" in q or (context and context.time_range)
+            or (context and context.time)
+            or any(w in q for w in ["saturday", "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "शनिवार", "रविवार"])
+        )
+        
+        is_rain_check = (context and context.weather_intent == "rain_check") or "rain" in q or "पाऊस" in q or "baarish" in q
+
+        if is_rain_check:
+            from backend.app.services.agent.schemas import AnalyzeRainArgs
+            from backend.app.services.agent.tools import analyze_rain_tool
+            rain_res = await analyze_rain_tool(AnalyzeRainArgs(
+                location=city,
+                date=context.resolved_date if context else None,
+                time=context.time if context else None,
+                time_range=context.time_range if context else None
+            ))
+            
+            if language == "mr":
+                reply = f"{city} मध्ये पावसाचा अंदाज: {rain_res.get('summary')} (कमाल शक्यता: {rain_res.get('overall_chance')}%)"
+            else:
+                reply = f"Rain analysis for {city}: {rain_res.get('summary')} (Max chance: {rain_res.get('overall_chance')}%)"
+                
+            cards.append(CardItem(type="rain_timeline", data=rain_res))
+            
+        elif is_forecast_query:
+            forecast_res = await get_forecast_tool(ForecastArgs(
+                location=city,
+                date=context.resolved_date if context else None,
+                time=context.time if context else None,
+                time_range=context.time_range if context else None,
+                activity=context.activity if context else ("cricket" if is_cricket else None)
+            ))
+
+            target_period = forecast_res.get("target_period")
+            day_forecast = forecast_res.get("day_forecast", {})
+            daily_forecast = forecast_res.get("daily_forecast", [])
+
+            if target_period:
+                p_temp = target_period.get("temperature_c") or target_period.get("avg_temperature_c") or temp
+                p_rain = target_period.get("precipitation_probability", target_period.get("rain_chance_pct", rain_chance))
+                p_cond = target_period.get("condition", cond)
+                p_hour = target_period.get("hour") or target_period.get("time_range")
+                act_eval = target_period.get("activity_suitability")
+
+                if language == "mr":
+                    reply = format_marathi_weather_reply(
+                        city=city,
+                        date_key=context.date if context else "tomorrow",
+                        date_expr=context.date_expression if context else "उद्या",
+                        time_val=context.time if context else None,
+                        time_range=context.time_range if context else None,
+                        high_c=p_temp,
+                        low_c=day_forecast.get("low_c", 22) if day_forecast else 22,
+                        condition=p_cond,
+                        rain_chance=p_rain,
+                        activity="cricket" if is_cricket else None
+                    )
+                elif is_cricket and act_eval:
+                    reply = f"For cricket at {p_hour} ({context.date_expression if context else 'tomorrow'}) in {city}: {act_eval.get('reason')} {act_eval.get('recommendation')}"
+                else:
+                    reply = f"{context.date_expression.title() if context else 'Tomorrow'} ({p_hour}) in {city}: expect {p_cond} with temperature around {p_temp}°C. Rain probability: {p_rain}%."
+
+                if act_eval:
+                    cards.append(CardItem(type="activity_suitability", data=act_eval))
+                elif target_period.get("period_type") in ["exact_hour", "time_range"]:
+                    cards.append(CardItem(type="hourly_forecast", data=forecast_res))
+                else:
+                    cards.append(CardItem(type="forecast", data=forecast_res))
+
+            elif day_forecast:
+                d_high = day_forecast.get("high_c", temp)
+                d_low = day_forecast.get("low_c", 22)
+                d_cond = day_forecast.get("condition", cond)
+                d_rain = day_forecast.get("daily_precipitation_probability", day_forecast.get("daily_rain_chance_pct", day_forecast.get("rainChance", rain_chance)))
+                d_day = day_forecast.get("day", "Tomorrow")
+
+                if language == "mr":
+                    reply = format_marathi_weather_reply(
+                        city=city,
+                        date_key=context.date if context else "tomorrow",
+                        date_expr=context.date_expression if context else "उद्या",
+                        time_val=None,
+                        time_range=None,
+                        high_c=d_high,
+                        low_c=d_low,
+                        condition=d_cond,
+                        rain_chance=d_rain
+                    )
+                else:
+                    reply = f"{context.date_expression.title() if context else d_day} in {city}: expect {d_cond} with high {d_high}°C / low {d_low}°C. Rain probability: {d_rain}%."
+
+                cards.append(CardItem(type="forecast", data=forecast_res))
+            else:
+                reply = f"Forecast data for {city} is currently unavailable."
+
+        # Spraying / Crop Advisory
+        elif "spray" in q or "crop" in q or "cotton" in q or "farm" in q or "irrigation" in q or "sheti" in q:
             from backend.app.services.agriculture_service import AgricultureService
             crop = "Cotton"
             for c in ["Cotton", "Sugarcane", "Wheat", "Rice", "Soybean", "Tomato", "Onion", "Groundnut"]:
@@ -528,8 +875,8 @@ class WeatherGPTAgent:
             c_daily = comp_weather.get("daily", [])
             p_daily = weather_data.get("daily", [])
 
-            p_tmrw_rain = p_daily[1].get("rainChance", 0) if len(p_daily) > 1 else rain_chance
-            c_tmrw_rain = c_daily[1].get("rainChance", 0) if len(c_daily) > 1 else comp_weather.get("insight", {}).get("rainChance", 0)
+            p_tmrw_rain = p_daily[1].get("daily_precipitation_probability", p_daily[1].get("rainChance", 0)) if len(p_daily) > 1 else rain_chance
+            c_tmrw_rain = c_daily[1].get("daily_precipitation_probability", c_daily[1].get("rainChance", 0)) if len(c_daily) > 1 else comp_weather.get("insight", {}).get("rainChance", 0)
 
             if "tomorrow" in q and ("rain" in q or "higher" in q or "wetter" in q):
                 if p_tmrw_rain > c_tmrw_rain:
@@ -575,23 +922,35 @@ class WeatherGPTAgent:
                 cards.append(CardItem(type="risk", data=top))
             else:
                 reply = f"Skycast Weather Risk evaluation for {city} is Green (Normal Conditions) with no active hazards detected."
-        elif "tomorrow" in q or "udya" in q or "kal" in q or "நாளை" in q or "రేపు" in q or "আগামীকাল" in q:
+
+        elif "tomorrow" in q or "udya" in q or "kal" in q or (context and context.date == "tomorrow") or "evening" in q or "संध्याकाळ" in q:
             daily = weather_data.get("daily", [])
             if len(daily) > 1:
                 tmrw = daily[1]
+                time_lbl = " (Evening)" if (context and context.time_range == "evening") or "evening" in q or "संध्याकाळ" in q else ""
                 reply = self._ft(
                     "tomorrow", language,
-                    day=tmrw.get("day", "Tomorrow"),
+                    day=f"{tmrw.get('day', 'Tomorrow')}{time_lbl}",
                     city=city,
                     cond=tmrw.get("condition", "partly cloudy"),
                     high=tmrw.get("highC", "--"),
                     low=tmrw.get("lowC", "--"),
-                    rain=tmrw.get("rainChance", 0)
+                    rain=tmrw.get("daily_precipitation_probability", tmrw.get("rainChance", 0))
                 )
-                cards.append(CardItem(type="forecast", data=tmrw))
+                cards.append(CardItem(type="forecast", data=weather_data))
             else:
                 reply = f"Forecast data for tomorrow in {city} is currently unavailable."
-        elif "rain" in q or "paus" in q or "barish" in q or "baarish" in q or "மழை" in q or "వర్షం" in q or "বৃষ্টি" in q:
+        elif any(w in q for w in ["saturday", "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "शनिवार", "रविवार"]) or (context and context.date in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]):
+            daily = weather_data.get("daily", [])
+            target_day_name = context.date if context else "Saturday"
+            matched_day = next((d for d in daily if d.get("day", "").lower().startswith(target_day_name[:3].lower())), daily[-1] if daily else None)
+            if matched_day:
+                matched_rain = matched_day.get("daily_precipitation_probability", matched_day.get("rainChance", 0))
+                reply = f"Forecast for {matched_day.get('day')} in {city}: {matched_day.get('condition')} with high {matched_day.get('highC')}°C / low {matched_day.get('lowC')}°C. Rain probability: {matched_rain}%."
+                cards.append(CardItem(type="forecast", data=weather_data))
+            else:
+                reply = f"Extended forecast for {target_day_name} in {city} is currently unavailable."
+        elif "rain" in q or "paus" in q or "barish" in q or "baarish" in q or "मழை" in q or "వర్షం" in q or "বৃষ্টি" in q:
             if rain_chance >= 50:
                 reply = self._ft("rain_yes", language, city=city, rain=rain_chance)
             elif rain_chance >= 20:
@@ -620,6 +979,19 @@ class WeatherGPTAgent:
                 cond=cond, humidity=humidity, wind=wind,
                 alert=alert_part
             )
+            cards.append(CardItem(
+                type="current_weather",
+                data={
+                    "city": city,
+                    "temperature": temp,
+                    "feelsLike": feels,
+                    "condition": cond,
+                    "humidity": humidity,
+                    "windSpeed": wind,
+                    "precipitation_probability": rain_chance,
+                    "rainChance": rain_chance
+                }
+            ))
         if session_id:
             await self._save_message(session_id, "user", user_text)
             await self._save_message(session_id, "model", reply)
@@ -631,16 +1003,19 @@ class WeatherGPTAgent:
             session_id=session_id,
             cards=cards,
             sources=[SourceItem(type="central_weather_data", timestamp=now_iso, provider="open_meteo")],
-            data_status="degraded" if degraded else "fresh"
+            data_status="degraded" if degraded else "fresh",
+            conversation_context=context.to_summary_dict() if context else None
         )
+
 
     async def _load_session_context(
         self,
         session_id: Optional[str],
         default_city: Optional[str],
-        language: str = "en"
+        language: str = "en",
+        user_role: str = "general_public"
     ) -> (str, Optional[str], List[Dict[str, Any]]):
-        """Loads session and message history from PostgreSQL."""
+        """Loads session and message history from PostgreSQL, including user role."""
         sid = session_id or str(uuid.uuid4())
         location_ctx = default_city
         history = []

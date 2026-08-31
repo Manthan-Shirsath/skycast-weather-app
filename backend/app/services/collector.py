@@ -1,10 +1,12 @@
 import asyncio
 import logging
+from typing import Optional
 from backend.app.core.config import COLLECTOR_POLL_INTERVAL
 from backend.app.core.websocket import ws_manager
 from backend.app.services.weather_hub import weather_hub
 from backend.app.services.alert_service import alert_service
 from backend.app.services.history_service import HistoryService
+
 
 logger = logging.getLogger("skycast.collector")
 

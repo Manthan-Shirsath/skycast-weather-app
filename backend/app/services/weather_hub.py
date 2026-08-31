@@ -155,7 +155,7 @@ class WeatherDataHub:
         """
         Retrieve normalized point weather for specific coordinates.
         """
-        cache_key = f"weather:point:{round(lat, 2)}:{round(lon, 2)}"
+        cache_key = f"weather:point:{round(lat, 4)}:{round(lon, 4)}"
         if not force_refresh:
             cached = await cache.get(cache_key)
             if cached:
@@ -276,7 +276,7 @@ class WeatherDataHub:
 
     async def ingest_point_weather(self, lat: float, lon: float) -> Dict[str, Any]:
         """Ingest raw coordinate forecast into normalized point schema."""
-        cache_key = f"weather:point:{round(lat, 2)}:{round(lon, 2)}"
+        cache_key = f"weather:point:{round(lat, 4)}:{round(lon, 4)}"
         try:
             data = await self.provider.fetch_forecast(lat, lon)
             current = data.get("current", {})
@@ -458,6 +458,7 @@ class WeatherDataHub:
         live_pressure = float(curr_raw.get("pressure_msl", curr_raw.get("surface_pressure", 1013.0)))
 
         # 2. Current Weather
+        current_precip_prob = float(daily_raw.get("precipitation_probability_max", [20])[0]) if daily_raw.get("precipitation_probability_max") else 20.0
         current_weather = CanonicalCurrentWeather(
             temperature_c=float(curr_raw.get("temperature_2m", 25.0)),
             feels_like_c=float(curr_raw.get("apparent_temperature", curr_raw.get("temperature_2m", 25.0))),
@@ -465,7 +466,8 @@ class WeatherDataHub:
             dew_point_c=float(hourly_raw.get("dew_point_2m", [18.0])[0]) if hourly_raw.get("dew_point_2m") else None,
             precipitation_mm=float(curr_raw.get("precipitation", 0.0)),
             rain_mm=float(curr_raw.get("rain", 0.0)),
-            rain_probability_pct=float(daily_raw.get("precipitation_probability_max", [20])[0]) if daily_raw.get("precipitation_probability_max") else 20.0,
+            precipitation_probability=current_precip_prob,
+            rain_probability_pct=current_precip_prob,
             wind_speed_kmh=float(curr_raw.get("wind_speed_10m", 10.0)),
             wind_direction_deg=wind_deg,
             wind_direction_label=get_wind_direction_label(wind_deg),
@@ -537,6 +539,7 @@ class WeatherDataHub:
                 h_item_icon = h_icon
                 h_item_code = h_code
 
+            h_prob = float(hourly_rains[i]) if i < len(hourly_rains) else 0.0
             hourly_items.append(CanonicalHourlyItem(
                 time=formatted_time,
                 hour=hour_val,
@@ -544,7 +547,8 @@ class WeatherDataHub:
                 feels_like_c=h_item_feels,
                 humidity_pct=h_item_hum,
                 precipitation_mm=float(hourly_precips[i]) if i < len(hourly_precips) else 0.0,
-                rain_probability_pct=float(hourly_rains[i]) if i < len(hourly_rains) else 0.0,
+                precipitation_probability=h_prob,
+                rain_probability_pct=h_prob,
                 wind_speed_kmh=h_item_wind,
                 wind_direction_label="N",
                 cloud_cover_pct=float(hourly_clouds[i]) if i < len(hourly_clouds) else 40.0,
@@ -582,16 +586,19 @@ class WeatherDataHub:
 
             d_code = daily_codes[i] if i < len(daily_codes) else 0
             d_cond, d_icon = decode_weather_code(d_code)
+            d_rain_val = float(daily_rains[i]) if i < len(daily_rains) else 0.0
 
             daily_items.append(CanonicalDailyItem(
                 day=day_name,
                 date=formatted_date,
+                date_iso=date_str,
                 high_c=float(daily_tmax[i]) if i < len(daily_tmax) else current_weather.temperature_c,
                 low_c=float(daily_tmin[i]) if i < len(daily_tmin) else current_weather.temperature_c - 5,
                 condition=d_cond,
                 icon=d_icon,
                 weather_code=d_code,
-                rain_probability_pct=float(daily_rains[i]) if i < len(daily_rains) else 0.0,
+                daily_precipitation_probability=d_rain_val,
+                rain_probability_pct=d_rain_val,
                 precipitation_sum_mm=float(daily_precip_sums[i]) if i < len(daily_precip_sums) else 0.0,
                 wind_speed_max_kmh=float(daily_wind_max[i]) if i < len(daily_wind_max) else 15.0,
                 wind_gusts_max_kmh=float(daily_gust_max[i]) if i < len(daily_gust_max) else 25.0,
@@ -599,6 +606,35 @@ class WeatherDataHub:
                 sunrise=daily_sunrises[i].split("T")[1][:5] if i < len(daily_sunrises) and "T" in str(daily_sunrises[i]) else "06:00",
                 sunset=daily_sunsets[i].split("T")[1][:5] if i < len(daily_sunsets) and "T" in str(daily_sunsets[i]) else "18:30"
             ))
+
+        # Full multi-day hourly series for exact hour / time-range lookups
+        full_hourly_series = []
+        for i in range(len(hourly_times)):
+            t_str = str(hourly_times[i])
+            date_part = t_str.split("T")[0] if "T" in t_str else ""
+            time_part = t_str.split("T")[1][:5] if "T" in t_str else f"{(i % 24):02d}:00"
+            h_val = int(time_part.split(":")[0]) if ":" in time_part else (i % 24)
+            h_code = hourly_codes[i] if i < len(hourly_codes) else 0
+            h_cond, h_icon = decode_weather_code(h_code)
+            h_prob_val = float(hourly_rains[i]) if i < len(hourly_rains) else 0.0
+
+            full_hourly_series.append({
+                "time_iso": t_str,
+                "date": date_part,
+                "time": time_part,
+                "hour": h_val,
+                "temperature_c": float(hourly_temps[i]) if i < len(hourly_temps) else current_weather.temperature_c,
+                "feels_like_c": float(hourly_feels[i]) if i < len(hourly_feels) else current_weather.feels_like_c,
+                "humidity_pct": float(hourly_hums[i]) if i < len(hourly_hums) else 60.0,
+                "precipitation_mm": float(hourly_precips[i]) if i < len(hourly_precips) else 0.0,
+                "precipitation_probability": h_prob_val,
+                "rain_probability_pct": h_prob_val,
+                "wind_speed_kmh": float(hourly_winds[i]) if i < len(hourly_winds) else 10.0,
+                "cloud_cover_pct": float(hourly_clouds[i]) if i < len(hourly_clouds) else 40.0,
+                "weather_code": h_code,
+                "condition": h_cond,
+                "icon": h_icon
+            })
 
         # 5. Freshness Meta
         freshness_meta = CanonicalFreshnessMeta(
@@ -616,8 +652,10 @@ class WeatherDataHub:
             current=current_weather,
             hourly=hourly_items,
             daily=daily_items,
-            freshness=freshness_meta
+            freshness=freshness_meta,
+            hourly_series=full_hourly_series
         )
+
 
 
 # Singleton Instance of Central Weather Data Hub
