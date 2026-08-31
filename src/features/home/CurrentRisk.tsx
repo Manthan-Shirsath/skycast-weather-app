@@ -2,6 +2,7 @@ import React from 'react';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ShieldCheck, ShieldAlert, Sun, Eye } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 interface CurrentRiskProps {
   isLoading: boolean;
@@ -10,17 +11,18 @@ interface CurrentRiskProps {
 }
 
 export function CurrentRisk({ isLoading, current, alerts }: CurrentRiskProps) {
+  const { t } = useTranslation();
   if (isLoading) {
     return (
       <section className="space-y-5 h-full">
-        <h2 className="text-2xl font-bold text-sky-text-primary tracking-tight">Current Risk Level</h2>
+        <h2 className="text-2xl font-bold text-sky-text-primary tracking-tight">{t('home.current_risk', 'Current Risk Level')}</h2>
         <Skeleton className="h-[340px] w-full rounded-[2rem]" />
       </section>
     );
   }
 
   const hasAlerts = alerts && alerts.length > 0;
-  const riskLevel = hasAlerts ? "High Risk" : "Low Risk";
+  const riskLevel = hasAlerts ? t('home.high_risk', 'High Risk') : t('home.low_risk', 'Low Risk');
   const RiskIcon = hasAlerts ? ShieldAlert : ShieldCheck;
   const isLow = !hasAlerts;
 
@@ -41,7 +43,7 @@ export function CurrentRisk({ isLoading, current, alerts }: CurrentRiskProps) {
 
   return (
     <section className="space-y-5 h-full flex flex-col">
-      <h2 className="text-2xl font-bold text-sky-text-primary tracking-tight">Risk Analysis</h2>
+      <h2 className="text-2xl font-bold text-sky-text-primary tracking-tight">{t('home.risk_analysis', 'Risk Analysis')}</h2>
       
       <div className="glass-card rounded-[2rem] overflow-hidden flex-1 flex flex-col relative group">
         

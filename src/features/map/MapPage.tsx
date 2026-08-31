@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import Map, { NavigationControl, Marker, Popup, Source, Layer, FullscreenControl, ScaleControl, MapRef } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { cn } from '@/lib/utils';
@@ -228,6 +229,7 @@ const BASEMAP_STYLES = {
 
 export default function MapPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const mapRef = useRef<MapRef | null>(null);
 
   // Map View State
@@ -575,7 +577,7 @@ export default function MapPage() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="font-bold text-sky-text-primary text-[13px] leading-tight tracking-tight">Meteorological Radar</h1>
+              <h1 className="font-bold text-sky-text-primary text-[13px] leading-tight tracking-tight">{t('nav.weather_map', 'Meteorological Radar')}</h1>
               <Badge variant="outline" className="text-[8px] px-1 py-0 font-bold border-sky-primary text-sky-primary bg-sky-primary/10">LIVE</Badge>
             </div>
             <p className="text-[10px] text-sky-text-secondary font-medium mt-0.5 leading-snug">

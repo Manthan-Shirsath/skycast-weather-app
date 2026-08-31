@@ -12,17 +12,18 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 GOOGLE_WEATHER_API_KEY = os.getenv("GOOGLE_WEATHER_API_KEY", "").strip()
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "").strip()
 
-# Cache TTLs (in seconds)
-TTL_CURRENT_WEATHER = int(os.getenv("TTL_CURRENT_WEATHER", "300"))  # 5 minutes
-TTL_MAP_WEATHER = int(os.getenv("TTL_MAP_WEATHER", "300"))          # 5 minutes
-TTL_FORECAST = int(os.getenv("TTL_FORECAST", "900"))                # 15 minutes
-TTL_RADAR_META = int(os.getenv("TTL_RADAR_META", "180"))            # 3 minutes
-TTL_ALERTS = int(os.getenv("TTL_ALERTS", "600"))                    # 10 minutes
-TTL_GOOGLE_ALERTS = int(os.getenv("TTL_GOOGLE_ALERTS", "600"))      # 10 minutes
-TTL_OPENWEATHER_ALERTS = int(os.getenv("TTL_OPENWEATHER_ALERTS", "600")) # 10 minutes
+# Cache TTLs (in seconds) - Optimized for On-Demand Fetching & High Cache Hit Ratio
+TTL_CURRENT_WEATHER = int(os.getenv("TTL_CURRENT_WEATHER", "900"))   # 15 minutes
+TTL_MAP_WEATHER = int(os.getenv("TTL_MAP_WEATHER", "1800"))          # 30 minutes
+TTL_FORECAST = int(os.getenv("TTL_FORECAST", "1800"))               # 30 minutes
+TTL_RADAR_META = int(os.getenv("TTL_RADAR_META", "600"))             # 10 minutes
+TTL_ALERTS = int(os.getenv("TTL_ALERTS", "900"))                     # 15 minutes
+TTL_GOOGLE_ALERTS = int(os.getenv("TTL_GOOGLE_ALERTS", "900"))       # 15 minutes
+TTL_OPENWEATHER_ALERTS = int(os.getenv("TTL_OPENWEATHER_ALERTS", "900")) # 15 minutes
 
-# Background Collector polling intervals (in seconds)
-COLLECTOR_POLL_INTERVAL = int(os.getenv("COLLECTOR_POLL_INTERVAL", "180")) # 3 minutes
+# Background Collector Configuration
+COLLECTOR_POLL_INTERVAL = int(os.getenv("COLLECTOR_POLL_INTERVAL", "1800")) # 30 minutes if enabled
+ENABLE_BACKGROUND_POLLING = os.getenv("ENABLE_BACKGROUND_POLLING", "false").lower() in ("true", "1", "yes")
 
 # Configurable Alert Detection Thresholds
 ALERT_THRESHOLDS = {

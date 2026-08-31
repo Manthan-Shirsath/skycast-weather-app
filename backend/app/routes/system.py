@@ -34,10 +34,11 @@ async def get_system_metrics():
         raise HTTPException(status_code=500, detail=f"Metrics collection failed: {str(exc)}")
 
 
+@router.get("/health")
 @router.get("/system/health")
 async def get_system_health():
     """
-    Simple health check endpoint for load balancers and monitoring systems.
+    Simple lightweight health check endpoint for load balancers, uptime monitors, and keep-alive pings.
     """
     try:
         metrics = metrics_collector.get_metrics_summary()

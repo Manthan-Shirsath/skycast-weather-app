@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
+import { useTranslation } from 'react-i18next';
 
 export default function ForecastPage() {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const city = searchParams.get('city') || 'Pune';
   
@@ -36,7 +38,7 @@ export default function ForecastPage() {
       <div className="flex h-full items-center justify-center bg-sky-background">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-sky-primary" />
-          <p className="text-sky-text-secondary font-medium">Loading extended forecast...</p>
+          <p className="text-sky-text-secondary font-medium">{t('forecast.loading', 'Loading extended forecast...')}</p>
         </div>
       </div>
     );
@@ -47,7 +49,7 @@ export default function ForecastPage() {
       <div className="flex h-full items-center justify-center bg-sky-background">
         <div className="flex flex-col items-center gap-4">
           <AlertCircle className="h-8 w-8 text-sky-danger" />
-          <p className="text-sky-text-secondary font-medium">Failed to load forecast.</p>
+          <p className="text-sky-text-secondary font-medium">{t('forecast.failed', 'Failed to load forecast.')}</p>
         </div>
       </div>
     );
@@ -84,8 +86,8 @@ export default function ForecastPage() {
         {/* Main Chart */}
         <Card className="lg:col-span-2 border-sky-border bg-sky-surface shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg">24-Hour Temperature Trend</CardTitle>
-            <CardDescription>Expected temperature variations</CardDescription>
+            <CardTitle className="text-lg">{t('forecast.temp_trend', '24-Hour Temperature Trend')}</CardTitle>
+            <CardDescription>{t('forecast.expected_vars', 'Expected temperature variations')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[250px] w-full">
@@ -131,7 +133,7 @@ export default function ForecastPage() {
         {/* Rain Probability Chart */}
         <Card className="border-sky-border bg-sky-surface shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg">Precipitation Forecast</CardTitle>
+            <CardTitle className="text-lg">{t('forecast.precip_forecast', 'Precipitation Forecast')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[250px] w-full">

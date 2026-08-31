@@ -193,6 +193,11 @@ class ForecastIngestionWorker:
         self.service = ForecastIngestionService()
 
     def start(self):
+        from backend.app.core.config import ENABLE_BACKGROUND_POLLING
+        if not ENABLE_BACKGROUND_POLLING:
+            logger.info("⚙️ [ForecastIngestionWorker] Background forecast ingestion polling disabled (On-Demand Active).")
+            return
+
         if not self._is_running:
             self._is_running = True
             self._task = asyncio.create_task(self._run_loop())

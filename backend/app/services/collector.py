@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from typing import Optional
-from backend.app.core.config import COLLECTOR_POLL_INTERVAL
+from backend.app.core.config import COLLECTOR_POLL_INTERVAL, ENABLE_BACKGROUND_POLLING
 from backend.app.core.websocket import ws_manager
 from backend.app.services.weather_hub import weather_hub
 from backend.app.services.alert_service import alert_service
@@ -25,6 +25,10 @@ class WeatherCollectorWorker:
         self._task: Optional[asyncio.Task] = None
 
     def start(self):
+        if not ENABLE_BACKGROUND_POLLING:
+            logger.info("⚙️ [COLLECTOR] Background API polling disabled (On-Demand Redis Caching Active).")
+            return
+
         if not self._is_running:
             self._is_running = True
             self._task = asyncio.create_task(self._run_loop())

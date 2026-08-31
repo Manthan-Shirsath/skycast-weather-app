@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { CloudRain, Loader2, AlertCircle, BarChart3, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -9,6 +10,7 @@ type TrendRange = '24h' | '7d' | '30d';
 
 export default function ClimatePage() {
   const [searchParams] = useSearchParams();
+  const { t } = useTranslation();
   const city = searchParams.get('city') || 'Pune';
   
   const [range, setRange] = useState<TrendRange>('7d');
@@ -46,7 +48,7 @@ export default function ClimatePage() {
       <div className="flex h-full items-center justify-center bg-sky-background">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-sky-primary" />
-          <p className="text-sky-text-secondary font-medium">Analyzing historical data...</p>
+          <p className="text-sky-text-secondary font-medium">{t('climate.analyzing', 'Analyzing historical data...')}</p>
         </div>
       </div>
     );
@@ -57,7 +59,7 @@ export default function ClimatePage() {
       <div className="flex h-full items-center justify-center bg-sky-background">
         <div className="flex flex-col items-center gap-4">
           <AlertCircle className="h-8 w-8 text-sky-danger" />
-          <p className="text-sky-text-secondary font-medium">Failed to load climate data.</p>
+          <p className="text-sky-text-secondary font-medium">{t('climate.failed', 'Failed to load climate data.')}</p>
         </div>
       </div>
     );
@@ -80,7 +82,7 @@ export default function ClimatePage() {
         <div>
           <h1 className="text-3xl font-bold text-sky-text-primary flex items-center gap-3">
             <BarChart3 className="h-8 w-8 text-sky-primary" />
-            Climate Trends
+            {t('nav.climate', 'Climate Trends')}
           </h1>
           <p className="text-sky-text-secondary mt-1">Historical analytics for {primaryCity}</p>
         </div>

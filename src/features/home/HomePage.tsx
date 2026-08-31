@@ -1,14 +1,17 @@
 import React from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useDashboard } from '@/lib/query/hooks';
 import { Button } from '@/components/ui/Button';
-import { MapPin } from 'lucide-react';
+import { MapPin, CloudOff } from 'lucide-react';
 import { WeatherHero } from './WeatherHero';
 import { HourlyForecast } from './HourlyForecast';
 import { CurrentRisk } from './CurrentRisk';
+import { useTranslation } from 'react-i18next';
 
 export default function HomePage() {
-  const [searchParams] = useSearchParams();
+  const { t } = useTranslation();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
   const navigate = useNavigate();
   const city = searchParams.get('city') || 'Pune';
   
@@ -17,18 +20,19 @@ export default function HomePage() {
   if (isError) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-center space-y-4 p-8 bg-sky-surface border border-sky-border rounded-xl shadow-sm">
-          <p className="text-sky-danger text-lg font-semibold">Weather data unavailable</p>
-          <p className="text-sky-text-secondary text-sm max-w-sm">
-            We couldn't retrieve the latest data for {city}. Please check your connection or try again.
+        <div className="flex flex-col items-center justify-center h-full space-y-4 p-8 bg-sky-surface border border-sky-border rounded-xl shadow-sm">
+          <CloudOff className="h-12 w-12 text-sky-text-secondary opacity-50" />
+          <p className="text-sky-danger text-lg font-semibold">{t('home.unavailable', 'Weather data unavailable')}</p>
+          <p className="text-sky-text-secondary text-sm max-w-sm text-center">
+            {t('home.errorDescription', 'We couldn\'t retrieve the latest data for {{city}}. Please check your connection or try again.', { city })}
           </p>
-          <Button onClick={() => window.location.reload()} variant="outline">Retry</Button>
+          <Button onClick={() => window.location.reload()} variant="outline">{t('home.retry', 'Retry')}</Button>
         </div>
       </div>
     );
   }
 
-  const { location, current, hourly, alerts, sun } = dashboard || {};
+  const { location: locationData, current, hourly, alerts, sun } = dashboard || {};
 
   return (
     <div className="flex flex-col h-full w-full overflow-y-auto">
@@ -36,7 +40,7 @@ export default function HomePage() {
       <div className="lg:hidden sticky top-0 z-50 bg-sky-background/80 backdrop-blur-md border-b border-sky-border px-4 py-3 flex items-center justify-between">
         <div className="flex items-center space-x-2 text-sky-text-primary font-medium">
           <MapPin className="h-4 w-4 text-sky-primary" />
-          <span className="text-sm">{location?.displayLocation || city}</span>
+          <span className="text-sm">{locationData?.displayLocation || city}</span>
         </div>
       </div>
 
@@ -45,7 +49,7 @@ export default function HomePage() {
         {/* 1. Hero / Current Weather */}
         <WeatherHero 
           isLoading={isLoading} 
-          location={location} 
+          location={locationData} 
           current={current} 
           sun={sun} 
           hourly={hourly} 

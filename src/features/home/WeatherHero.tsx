@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
 import { Sparkles, MapPin, Droplets, Wind, Thermometer, Navigation } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { getTimeOfDay } from '@/lib/weather-visuals';
 import { WeatherBackground } from './WeatherBackground';
 import { cn } from '@/lib/utils';
@@ -16,6 +17,7 @@ interface WeatherHeroProps {
 }
 
 export function WeatherHero({ isLoading, location, current, sun, hourly, onOpenWeatherGPT }: WeatherHeroProps) {
+  const { t } = useTranslation();
   // Determine date and time to display
   const currentDate = useMemo(() => {
     return new Intl.DateTimeFormat('en-US', { 
@@ -100,22 +102,22 @@ export function WeatherHero({ isLoading, location, current, sun, hourly, onOpenW
                  />
                </div>
                <span className="text-4xl md:text-5xl font-bold tracking-tight text-glow">
-                 {current?.condition || '--'}
+                 {current?.weather_code !== undefined ? t(`weather_codes.${current.weather_code}`) : current?.condition || '--'}
                </span>
             </div>
             
             <div className="flex flex-wrap items-center gap-3 text-sm font-semibold">
               <div className="flex items-center space-x-2 bg-black/30 backdrop-blur-xl px-5 py-3 rounded-2xl border border-white/10 hover:bg-black/40 transition-all hover:-translate-y-1 shadow-lg">
                 <Droplets className="h-4 w-4 text-blue-400" />
-                <span className="text-white/90">{current?.humidity || 0}% Humidity</span>
+                <span className="text-white/90">{current?.humidity || 0}% {t('weather.humidity')}</span>
               </div>
               <div className="flex items-center space-x-2 bg-black/30 backdrop-blur-xl px-5 py-3 rounded-2xl border border-white/10 hover:bg-black/40 transition-all hover:-translate-y-1 shadow-lg">
                 <Wind className="h-4 w-4 text-emerald-400" />
-                <span className="text-white/90">{current?.windSpeedKmh ? Math.round(current.windSpeedKmh) : 0} km/h Wind</span>
+                <span className="text-white/90">{current?.windSpeedKmh ? Math.round(current.windSpeedKmh) : 0} km/h {t('weather.wind')}</span>
               </div>
               <div className="flex items-center space-x-2 bg-black/30 backdrop-blur-xl px-5 py-3 rounded-2xl border border-white/10 hover:bg-black/40 transition-all hover:-translate-y-1 shadow-lg">
                 <Thermometer className="h-4 w-4 text-orange-400" />
-                <span className="text-white/90">Feels like {current?.feelsLikeC ? Math.round(current.feelsLikeC) : '--'}°</span>
+                <span className="text-white/90">{t('weather.feels_like')} {current?.feelsLikeC ? Math.round(current.feelsLikeC) : '--'}°</span>
               </div>
             </div>
           </div>
@@ -132,9 +134,9 @@ export function WeatherHero({ isLoading, location, current, sun, hourly, onOpenW
                     <Sparkles className="h-6 w-6 text-white animate-pulse" />
                   </div>
                   <div>
-                    <h3 className="text-white font-bold text-lg tracking-tight mb-1">AI Weather Insight</h3>
+                    <h3 className="text-white font-bold text-lg tracking-tight mb-1">{t('ai_insight.title', 'AI Insight')}</h3>
                     <p className="text-sm font-medium leading-relaxed text-white/80 line-clamp-3">
-                      Conditions are stable. Expect {current?.condition?.toLowerCase() || 'clear'} skies for the next few hours. Perfect time for outdoor activities.
+                      {t('weathergpt.analyzing', 'Analyzing weather data...')}
                     </p>
                   </div>
                 </div>
@@ -143,7 +145,7 @@ export function WeatherHero({ isLoading, location, current, sun, hourly, onOpenW
                   onClick={onOpenWeatherGPT}
                   className="w-full justify-between font-bold text-white bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl h-12 shadow-sm transition-all hover:scale-[1.02]"
                 >
-                  Open WeatherGPT <span className="ml-2 group-hover/card:translate-x-1 transition-transform">&rarr;</span>
+                  {t('ai_insight.button')} <span className="ml-2 group-hover/card:translate-x-1 transition-transform">&rarr;</span>
                 </Button>
               </div>
             </div>

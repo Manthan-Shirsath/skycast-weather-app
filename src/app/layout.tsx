@@ -5,21 +5,24 @@ import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/Command';
-
-const NAV_ITEMS = [
-  { name: 'Home', path: '/', icon: Home },
-  { name: 'WeatherGPT', path: '/weathergpt', icon: Sparkles, badge: 'AI' },
-  { name: 'Forecast', path: '/forecast', icon: TrendingUp },
-  { name: 'Forecast Intelligence', path: '/forecast-intelligence', icon: Sparkles, badge: 'PRO' },
-  { name: 'Weather Map', path: '/map', icon: Map },
-  { name: 'Alerts', path: '/alerts', icon: AlertTriangle },
-  { name: 'Climate', path: '/climate', icon: CloudRain },
-  { name: 'Agriculture', path: '/agriculture', icon: Leaf },
-  { name: 'Locations', path: '/locations', icon: MapPin },
-];
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/Dialog';
+import { useTranslation } from 'react-i18next';
 
 function NavLinks({ isMobile, onNavigate }: { isMobile?: boolean, onNavigate?: () => void }) {
+  const { t } = useTranslation();
   const location = useLocation();
+  const NAV_ITEMS = [
+    { name: t('nav.home', 'Home'), path: '/', icon: Home },
+    { name: t('nav.weathergpt', 'WeatherGPT'), path: '/weathergpt', icon: Sparkles, badge: 'AI' },
+    { name: t('nav.forecast', 'Forecast'), path: '/forecast', icon: TrendingUp },
+    { name: t('nav.forecast_intelligence', 'Forecast Intelligence'), path: '/forecast-intelligence', icon: Sparkles, badge: 'PRO' },
+    { name: t('nav.weather_map', 'Weather Map'), path: '/map', icon: Map },
+    { name: t('nav.alerts', 'Alerts'), path: '/alerts', icon: AlertTriangle },
+    { name: t('nav.climate', 'Climate'), path: '/climate', icon: CloudRain },
+    { name: t('nav.agriculture', 'Agriculture'), path: '/agriculture', icon: Leaf },
+    { name: t('nav.locations', 'Locations'), path: '/locations', icon: MapPin },
+  ];
   return (
     <nav className={cn("space-y-1.5 px-3", isMobile ? "mt-6" : "flex-1 overflow-y-auto py-6")}>
       {NAV_ITEMS.map((item) => {
@@ -67,9 +70,11 @@ function NavLinks({ isMobile, onNavigate }: { isMobile?: boolean, onNavigate?: (
 }
 
 export function AppLayout() {
+  const { t } = useTranslation();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isDark, setIsDark] = useState(false);
   const navigate = useNavigate();
 
   const handleLocationSelect = (city: string) => {
@@ -91,19 +96,19 @@ export function AppLayout() {
 
   const toggleTheme = () => {
     document.documentElement.classList.toggle('dark');
+    setIsDark(!isDark);
   };
 
   return (
     <div className="flex h-screen w-full bg-sky-background overflow-hidden text-sky-text-primary font-sans antialiased">
-      {/* Desktop Sidebar - Premium floating look */}
       <aside className="hidden lg:flex w-72 flex-col bg-sky-surface/60 backdrop-blur-2xl border-r border-sky-border z-20 transition-all duration-300">
         <div className="flex h-20 items-center px-8">
           <div className="bg-gradient-to-tr from-sky-primary to-sky-ai p-2 rounded-xl shadow-md mr-3">
             <Sparkles className="h-5 w-5 text-white" />
           </div>
           <div>
-            <span className="text-xl font-bold tracking-tight text-sky-text-primary">SkyCast</span>
-            <span className="block text-[10px] text-sky-ai font-bold tracking-[0.2em] uppercase -mt-1">Intelligence</span>
+            <span className="text-xl font-bold tracking-tight text-sky-text-primary">{t('layout.skycast', 'SkyCast')}</span>
+            <span className="block text-[10px] text-sky-ai font-bold tracking-[0.2em] uppercase -mt-1">{t('layout.intelligence', 'Intelligence')}</span>
           </div>
         </div>
         
@@ -111,7 +116,7 @@ export function AppLayout() {
 
         <div className="p-6">
            <button onClick={toggleTheme} className="flex w-full items-center justify-between px-4 py-3 text-sm text-sky-text-secondary hover:text-sky-text-primary rounded-xl hover:bg-sky-surface-elevated/60 transition-all duration-300 group border border-transparent hover:border-sky-border">
-              <span className="font-semibold tracking-wide">Toggle Theme</span>
+              <span className="font-semibold tracking-wide">{t('layout.toggle_theme', 'Toggle Theme')}</span>
               <div className="bg-sky-surface-elevated p-1.5 rounded-lg group-hover:shadow-sm transition-all">
                 <Sun className="h-4 w-4 block dark:hidden text-amber-500" />
                 <Moon className="h-4 w-4 hidden dark:block text-sky-primary" />
@@ -120,10 +125,7 @@ export function AppLayout() {
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-gradient-to-br from-sky-background to-sky-surface-elevated/30">
-        
-        {/* Top Header - Glassmorphism */}
         <header className="h-20 glass-panel border-b-0 border-b-[var(--border-glass)] flex items-center justify-between px-4 lg:px-10 z-10 shrink-0 sticky top-0">
           <div className="flex items-center lg:hidden">
             <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
@@ -137,7 +139,7 @@ export function AppLayout() {
                   <div className="bg-gradient-to-tr from-sky-primary to-sky-ai p-2 rounded-xl shadow-md mr-3">
                     <Sparkles className="h-5 w-5 text-white" />
                   </div>
-                  <span className="text-xl font-bold tracking-tight">SkyCast</span>
+                  <span className="text-xl font-bold tracking-tight">{t('layout.skycast', 'SkyCast')}</span>
                 </div>
                 <NavLinks isMobile onNavigate={() => setIsMobileMenuOpen(false)} />
               </SheetContent>
@@ -145,17 +147,16 @@ export function AppLayout() {
             <div className="bg-gradient-to-tr from-sky-primary to-sky-ai p-1.5 rounded-lg shadow-sm mr-2">
               <Sparkles className="h-4 w-4 text-white" />
             </div>
-            <span className="text-lg font-bold tracking-tight">SkyCast</span>
+            <span className="text-lg font-bold tracking-tight">{t('layout.skycast', 'SkyCast')}</span>
           </div>
 
-          {/* Desktop/Tablet Topbar Controls */}
           <div className="hidden lg:flex flex-1 items-center gap-6">
              <button 
                 onClick={() => setIsSearchOpen(true)}
                 className="group flex items-center gap-3 px-4 py-2.5 text-sm text-sky-text-secondary bg-sky-surface/50 hover:bg-sky-surface border border-sky-border hover:border-sky-primary/30 rounded-2xl transition-all shadow-sm hover:shadow-md w-80"
              >
                 <Search className="h-4 w-4 text-sky-text-secondary group-hover:text-sky-primary transition-colors" />
-                <span className="font-medium">Search locations...</span>
+                <span className="font-medium">{t('layout.search_locations', 'Search locations...')}</span>
                 <kbd className="ml-auto pointer-events-none inline-flex h-6 select-none items-center gap-1 rounded-md border border-sky-border bg-sky-surface-elevated px-2 font-mono text-[10px] font-bold text-sky-text-secondary shadow-sm">
                   <span className="text-xs">⌘</span>K
                 </kbd>
@@ -170,36 +171,75 @@ export function AppLayout() {
                 <Bell className="h-5 w-5 text-sky-text-secondary" />
                 <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-sky-danger border-2 border-sky-surface animate-pulse"></span>
              </Button>
-             <Button variant="ghost" size="icon" className="rounded-full hover:bg-sky-surface-elevated transition-transform hover:scale-105">
-                <Settings className="h-5 w-5 text-sky-text-secondary" />
-             </Button>
+
+             <Dialog>
+               <DialogTrigger asChild>
+                 <Button variant="ghost" size="icon" className="rounded-full hover:bg-sky-surface-elevated transition-transform hover:scale-105">
+                    <Settings className="h-5 w-5 text-sky-text-secondary" />
+                 </Button>
+               </DialogTrigger>
+               <DialogContent className="sm:max-w-[425px]">
+                 <DialogHeader>
+                   <DialogTitle>{t('layout.settings', 'Settings')}</DialogTitle>
+                   <DialogDescription>
+                     {t('layout.settings_desc', 'Manage your application preferences here.')}
+                   </DialogDescription>
+                 </DialogHeader>
+                 <div className="grid gap-4 py-4">
+                   <div className="flex flex-col gap-2">
+                     <h3 className="font-medium text-sky-text-primary">{t('layout.theme', 'Theme')}</h3>
+                     <div className="flex items-center justify-between p-3 rounded-lg border border-sky-border bg-sky-surface-elevated/30">
+                       <span className="text-sm text-sky-text-secondary">{t('layout.toggle_dark_mode', 'Toggle Dark Mode')}</span>
+                       <Button variant="outline" size="sm" onClick={toggleTheme}>{t('layout.toggle', 'Toggle')}</Button>
+                     </div>
+                   </div>
+                   <div className="flex flex-col gap-2">
+                     <h3 className="font-medium text-sky-text-primary">{t('layout.units', 'Units')}</h3>
+                     <div className="flex items-center justify-between p-3 rounded-lg border border-sky-border bg-sky-surface-elevated/30">
+                       <span className="text-sm text-sky-text-secondary">{t('layout.temperature_unit', 'Temperature Unit')}</span>
+                       <div className="flex bg-sky-surface rounded-md border border-sky-border p-0.5">
+                         <button className="px-3 py-1 text-xs font-semibold rounded bg-sky-primary text-white">{t('layout.celsius', '°C')}</button>
+                         <button className="px-3 py-1 text-xs font-semibold rounded text-sky-text-secondary hover:text-sky-text-primary">{t('layout.fahrenheit', '°F')}</button>
+                       </div>
+                     </div>
+                   </div>
+                   <div className="flex flex-col gap-2">
+                     <h3 className="font-medium text-sky-text-primary">{t('layout.language', 'Language')}</h3>
+                     <div className="flex items-center justify-between p-3 rounded-lg border border-sky-border bg-sky-surface-elevated/30">
+                       <span className="text-sm text-sky-text-secondary">{t('layout.application_language', 'Application Language')}</span>
+                       <LanguageSwitcher />
+                     </div>
+                   </div>
+                 </div>
+               </DialogContent>
+             </Dialog>
+
              <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-sky-primary to-sky-ai ml-2 flex items-center justify-center text-white font-bold text-sm shadow-md cursor-pointer hover:shadow-lg transition-all hover:scale-105 border-2 border-sky-surface">
                 U
              </div>
           </div>
         </header>
 
-        {/* Global Command Palette */}
         <CommandDialog open={isSearchOpen} onOpenChange={setIsSearchOpen}>
           <CommandInput 
-            placeholder="Search locations, forecasts, or ask AI..." 
+            placeholder={t('layout.search_placeholder', 'Search locations, forecasts, or ask AI...')} 
             value={searchQuery}
             onValueChange={setSearchQuery}
             className="text-lg"
           />
           <CommandList className="p-2">
-            <CommandEmpty className="py-6 text-center text-sky-text-secondary">No results found.</CommandEmpty>
+            <CommandEmpty className="py-6 text-center text-sky-text-secondary">{t('layout.no_results', 'No results found.')}</CommandEmpty>
             
             {searchQuery.trim().length > 0 && (
-              <CommandGroup heading="Search" className="px-2">
+              <CommandGroup heading={t('layout.search', 'Search')} className="px-2">
                 <CommandItem onSelect={() => handleLocationSelect(searchQuery.trim())} className="rounded-lg cursor-pointer">
                   <Search className="mr-3 h-4 w-4 text-sky-primary" />
-                  <span className="font-medium">Get weather for <span className="text-sky-primary font-bold">"{searchQuery.trim()}"</span></span>
+                  <span className="font-medium">{t('layout.get_weather_for', 'Get weather for')} <span className="text-sky-primary font-bold">"{searchQuery.trim()}"</span></span>
                 </CommandItem>
               </CommandGroup>
             )}
 
-            <CommandGroup heading="Explore Diverse Weather" className="px-2">
+            <CommandGroup heading={t('layout.explore_weather', 'Explore Diverse Weather')} className="px-2">
               <CommandItem onSelect={() => handleLocationSelect('Yakutsk')} className="rounded-lg cursor-pointer my-1">
                 <MapPin className="mr-3 h-4 w-4 text-sky-400" />
                 <span className="font-medium">Yakutsk, Russia <span className="text-sky-text-secondary text-xs ml-2">(Extreme Cold / Snow)</span></span>
@@ -221,16 +261,15 @@ export function AppLayout() {
                 <span className="font-medium">Pune, India <span className="text-sky-text-secondary text-xs ml-2">(Current Location)</span></span>
               </CommandItem>
             </CommandGroup>
-            <CommandGroup heading="Quick Actions" className="px-2">
+            <CommandGroup heading={t('layout.quick_actions', 'Quick Actions')} className="px-2">
               <CommandItem onSelect={() => { setIsSearchOpen(false); navigate('/weathergpt'); }} className="rounded-lg cursor-pointer my-1 bg-sky-ai/5">
                 <Sparkles className="mr-3 h-4 w-4 text-sky-ai" />
-                <span className="text-sky-ai font-bold">Ask WeatherGPT</span>
+                <span className="text-sky-ai font-bold">{t('layout.ask_weathergpt', 'Ask WeatherGPT')}</span>
               </CommandItem>
             </CommandGroup>
           </CommandList>
         </CommandDialog>
 
-        {/* Page Content Viewport */}
         <div className="flex-1 overflow-y-auto hide-scrollbar relative z-0">
           <Outlet />
         </div>

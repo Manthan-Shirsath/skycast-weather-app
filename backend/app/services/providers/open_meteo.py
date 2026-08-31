@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Dict, Any, List, Optional
 import httpx
@@ -10,21 +11,48 @@ FORECAST_API_URL = "https://api.open-meteo.com/v1/forecast"
 
 
 class OpenMeteoProvider(BaseWeatherProvider):
-    """Open-Meteo Weather Data Provider Implementation."""
+    """Open-Meteo Weather Data Provider Implementation with Retry & Rate-Limit Handling."""
 
     @property
     def provider_name(self) -> str:
         return "open_meteo"
+
+    async def _get_with_retry(self, url: str, timeout: float = 12.0, max_retries: int = 2) -> httpx.Response:
+        """Execute GET request with exponential backoff on HTTP 429 Rate Limit responses."""
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            for attempt in range(max_retries + 1):
+                try:
+                    res = await client.get(url)
+                    if res.status_code == 429:
+                        if attempt < max_retries:
+                            backoff = (attempt + 1) * 1.5
+                            logger.warning("⚠️ [OPEN-METEO 429] Rate limited. Retrying in %.1fs (Attempt %d/%d)...", backoff, attempt + 1, max_retries)
+                            await asyncio.sleep(backoff)
+                            continue
+                        else:
+                            logger.error("❌ [OPEN-METEO 429] Rate limit hit and max retries exceeded.")
+                    res.raise_for_status()
+                    return res
+                except httpx.HTTPStatusError as err:
+                    if err.response.status_code == 429 and attempt < max_retries:
+                        backoff = (attempt + 1) * 1.5
+                        await asyncio.sleep(backoff)
+                        continue
+                    raise err
+                except Exception as exc:
+                    if attempt < max_retries:
+                        await asyncio.sleep(1.0)
+                        continue
+                    raise exc
+            raise RuntimeError("Request failed after retries")
 
     async def geocode_city(self, city_name: str) -> Optional[Dict[str, Any]]:
         """Query Open-Meteo Geocoding API."""
         logger.info("🌐 [PROVIDER CALL] Open-Meteo Geocode for '%s'", city_name)
         url = f"{GEOCODING_API_URL}?name={city_name}&count=1&language=en&format=json"
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            res = await client.get(url)
-            res.raise_for_status()
-            data = res.json()
+        res = await self._get_with_retry(url, timeout=10.0)
+        data = res.json()
 
         results = data.get("results")
         if not results or len(results) == 0:
@@ -44,10 +72,8 @@ class OpenMeteoProvider(BaseWeatherProvider):
             f"&timezone=auto"
         )
 
-        async with httpx.AsyncClient(timeout=12.0) as client:
-            res = await client.get(url)
-            res.raise_for_status()
-            return res.json()
+        res = await self._get_with_retry(url, timeout=12.0)
+        return res.json()
 
     async def fetch_batch_forecast(self, coords: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Batch query multiple coordinates in a single Open-Meteo request using explicit GFS NWP model."""
@@ -64,11 +90,8 @@ class OpenMeteoProvider(BaseWeatherProvider):
             f"&timezone=auto"
         )
 
-        async with httpx.AsyncClient(timeout=14.0) as client:
-            res = await client.get(url)
-            res.raise_for_status()
-            raw = res.json()
-
+        res = await self._get_with_retry(url, timeout=14.0)
+        raw = res.json()
         return raw if isinstance(raw, list) else [raw]
 
 
