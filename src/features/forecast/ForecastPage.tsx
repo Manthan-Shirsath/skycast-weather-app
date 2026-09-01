@@ -6,6 +6,8 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
 import { useTranslation } from 'react-i18next';
+import { apiFetch } from '@/lib/api';
+
 
 export default function ForecastPage() {
   const { t } = useTranslation();
@@ -19,7 +21,7 @@ export default function ForecastPage() {
     async function fetchData() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/weather/dashboard?city=${encodeURIComponent(city)}`);
+        const res = await apiFetch(`/api/weather/dashboard?city=${encodeURIComponent(city)}`);
         if (res.ok) {
           const json = await res.json();
           setData(json);
@@ -104,8 +106,9 @@ export default function ForecastPage() {
                     dataKey="time" 
                     tickLine={false} 
                     axisLine={false} 
-                    tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} 
+                    tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} 
                     dy={10}
+                    minTickGap={30}
                     tickFormatter={(val) => {
                       const d = new Date(val);
                       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -144,8 +147,9 @@ export default function ForecastPage() {
                     dataKey="time" 
                     tickLine={false} 
                     axisLine={false} 
-                    tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} 
+                    tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} 
                     dy={10}
+                    minTickGap={30}
                     tickFormatter={(val) => {
                       const d = new Date(val);
                       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

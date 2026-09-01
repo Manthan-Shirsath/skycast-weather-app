@@ -8,6 +8,7 @@ import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, C
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/Dialog';
 import { useTranslation } from 'react-i18next';
+import { BottomNav } from '@/components/ui/BottomNav';
 
 function NavLinks({ isMobile, onNavigate }: { isMobile?: boolean, onNavigate?: () => void }) {
   const { t } = useTranslation();
@@ -23,9 +24,15 @@ function NavLinks({ isMobile, onNavigate }: { isMobile?: boolean, onNavigate?: (
     { name: t('nav.agriculture', 'Agriculture'), path: '/agriculture', icon: Leaf },
     { name: t('nav.locations', 'Locations'), path: '/locations', icon: MapPin },
   ];
+
+  const primaryPaths = ['/', '/weathergpt', '/forecast', '/map'];
+  const filteredItems = isMobile 
+    ? NAV_ITEMS.filter(item => !primaryPaths.includes(item.path))
+    : NAV_ITEMS;
+
   return (
     <nav className={cn("space-y-1.5 px-3", isMobile ? "mt-6" : "flex-1 overflow-y-auto py-6")}>
-      {NAV_ITEMS.map((item) => {
+      {filteredItems.map((item) => {
         const isActive = location.pathname === item.path;
         const Icon = item.icon;
         return (
@@ -76,11 +83,12 @@ export function AppLayout() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isDark, setIsDark] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLocationSelect = (city: string) => {
     setIsSearchOpen(false);
     setSearchQuery('');
-    navigate(`/?city=${encodeURIComponent(city)}`);
+    navigate(`${location.pathname}?city=${encodeURIComponent(city)}`);
   };
 
   useEffect(() => {
@@ -100,7 +108,7 @@ export function AppLayout() {
   };
 
   return (
-    <div className="flex h-screen w-full bg-sky-background overflow-hidden text-sky-text-primary font-sans antialiased">
+    <div className="flex h-[100dvh] w-full bg-sky-background overflow-hidden text-sky-text-primary font-sans antialiased">
       <aside className="hidden lg:flex w-72 flex-col bg-sky-surface/60 backdrop-blur-2xl border-r border-sky-border z-20 transition-all duration-300">
         <div className="flex h-20 items-center px-8">
           <div className="bg-gradient-to-tr from-sky-primary to-sky-ai p-2 rounded-xl shadow-md mr-3">
@@ -270,9 +278,10 @@ export function AppLayout() {
           </CommandList>
         </CommandDialog>
 
-        <div className="flex-1 overflow-y-auto hide-scrollbar relative z-0">
+        <div className="flex-1 overflow-y-auto hide-scrollbar relative z-0 lg:pb-0 pb-16">
           <Outlet />
         </div>
+        <BottomNav />
       </main>
     </div>
   );

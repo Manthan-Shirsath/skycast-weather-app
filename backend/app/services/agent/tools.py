@@ -109,6 +109,7 @@ async def analyze_rain_tool(args: AnalyzeRainArgs) -> Dict[str, Any]:
         location=data.get("city", loc_clean),
         date_iso=target_date_iso,
         time_range=args.time_range,
+        time_span=args.time_span,
         hourly_series=hourly_series
     )
 
@@ -337,14 +338,18 @@ async def get_forecast_tool(args: ForecastArgs) -> Dict[str, Any]:
                 "activity_suitability": activity_eval
             }
 
-    elif time_range_key:
-        range_bounds = {
-            "morning": (6, 11),
-            "afternoon": (12, 16),
-            "evening": (17, 21),
-            "night": (22, 23)
-        }
-        start_hr, end_hr = range_bounds.get(time_range_key, (17, 21))
+    elif args.time_span or time_range_key:
+        if args.time_span:
+            start_hr, end_hr = args.time_span
+            time_range_key = f"{start_hr}:00 - {end_hr}:00"
+        else:
+            range_bounds = {
+                "morning": (6, 11),
+                "afternoon": (12, 16),
+                "evening": (17, 21),
+                "night": (22, 23)
+            }
+            start_hr, end_hr = range_bounds.get(time_range_key, (17, 21))
         range_slots = [
             s for s in date_hourly_slots
             if s.get("hour") is not None and start_hr <= s.get("hour") <= end_hr

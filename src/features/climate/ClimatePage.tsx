@@ -5,6 +5,8 @@ import { CloudRain, Loader2, AlertCircle, BarChart3, TrendingDown, TrendingUp } 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Button } from '@/components/ui/Button';
+import { apiFetch } from '@/lib/api';
+
 
 type TrendRange = '24h' | '7d' | '30d';
 
@@ -21,7 +23,7 @@ export default function ClimatePage() {
     async function fetchData() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/trends?city=${encodeURIComponent(city)}&range=${range}`);
+        const res = await apiFetch(`/api/trends?city=${encodeURIComponent(city)}&range=${range}`);
         if (res.ok) {
           const json = await res.json();
           setData(json);
@@ -173,8 +175,9 @@ export default function ClimatePage() {
                       tickCount={range === '24h' ? 6 : (range === '7d' ? 7 : 10)}
                       tickLine={false} 
                       axisLine={false} 
-                      tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} 
+                      tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} 
                       dy={10}
+                      minTickGap={30}
                       tickFormatter={(val) => {
                         const d = new Date(val);
                         return range === '24h' 

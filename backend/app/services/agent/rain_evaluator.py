@@ -8,7 +8,7 @@ import datetime
 
 class RainEvaluator:
     @staticmethod
-    def evaluate_rain(location: str, date_iso: str, time_range: Optional[str], hourly_series: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def evaluate_rain(location: str, date_iso: str, time_range: Optional[str], time_span: Optional[List[int]], hourly_series: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Evaluates rain periods and dry windows from hourly data.
         """
@@ -22,8 +22,12 @@ class RainEvaluator:
         if not slots:
             slots = hourly_series[:24]
 
-        # Further filter by time_range if provided
-        if time_range:
+        # Further filter by time_range or time_span if provided
+        if time_span:
+            start_hr, end_hr = time_span
+            slots = [s for s in slots if s.get("hour") is not None and start_hr <= s.get("hour") <= end_hr]
+            time_range = f"{start_hr}:00 - {end_hr}:00"
+        elif time_range:
             range_bounds = {
                 "morning": (6, 11),
                 "afternoon": (12, 16),
@@ -115,6 +119,7 @@ class RainEvaluator:
             "location": location,
             "target_date": date_iso,
             "time_range": time_range,
+            "time_span": time_span,
             "summary": summary,
             "overall_chance": round(max_chance),
             "total_precipitation_mm": round(total_precip, 1),

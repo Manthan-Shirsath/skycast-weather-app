@@ -27,6 +27,7 @@ class ForecastArgs(BaseModel):
     date: Optional[str] = Field(None, description="Optional target date (e.g. 'tomorrow', 'today', '2026-08-30', 'Saturday')")
     time: Optional[str] = Field(None, description="Optional specific clock time (e.g. '17:00', '5 PM')")
     time_range: Optional[str] = Field(None, description="Optional time of day window ('morning', 'afternoon', 'evening', 'night')")
+    time_span: Optional[List[int]] = Field(None, description="Exact hour span if requested (e.g. [9, 16])")
     activity: Optional[str] = Field(None, description="Optional outdoor activity to evaluate suitability for (e.g. 'cricket', 'hiking')")
 
 
@@ -35,6 +36,7 @@ class AnalyzeRainArgs(BaseModel):
     date: Optional[str] = Field(None, description="Optional target date (e.g. 'tomorrow', 'today', '2026-08-30', 'Saturday')")
     time: Optional[str] = Field(None, description="Optional specific clock time (e.g. '17:00', '5 PM')")
     time_range: Optional[str] = Field(None, description="Optional time of day window ('morning', 'afternoon', 'evening', 'night')")
+    time_span: Optional[List[int]] = Field(None, description="Exact hour span if requested (e.g. [9, 16])")
 
 
 class RiskArgs(BaseModel):

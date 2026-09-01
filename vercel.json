@@ -1,4 +1,9 @@
 {
+  "build": {
+    "env": {
+      "VITE_API_URL": "https://skycast-weather-app-6s57.onrender.com"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/:path*",

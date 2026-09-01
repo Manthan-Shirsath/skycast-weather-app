@@ -32,6 +32,7 @@ class ConversationContext(BaseModel):
     resolved_date: str = Field(default_factory=lambda: datetime.date.today().isoformat(), description="Calendar date YYYY-MM-DD")
     time: Optional[str] = Field(None, description="Specific hour/minute if requested (e.g. '17:00', '5 PM')")
     time_range: Optional[str] = Field(None, description="Time of day: 'morning', 'afternoon', 'evening', 'night'")
+    time_span: Optional[List[int]] = Field(None, description="Exact hour span if requested (e.g. [9, 16])")
     weather_intent: str = Field("current_weather", description="Intent: 'current_weather', 'forecast', 'activity_suitability', 'rain_check', 'alerts', 'comparison'")
     activity: Optional[str] = Field(None, description="Outdoor activity (e.g. 'cricket', 'football', 'hiking', 'running')")
     language: str = Field("en", description="Target response language: 'en', 'mr', 'hi', etc.")
@@ -48,6 +49,7 @@ class ConversationContext(BaseModel):
             "resolved_date": self.resolved_date,
             "time": self.time,
             "time_range": self.time_range,
+            "time_span": self.time_span,
             "activity": self.activity,
             "weather_intent": self.weather_intent,
             "language": self.language
@@ -470,16 +472,58 @@ def format_marathi_weather_reply(
 
 
 
-def extract_time_reference(text: str) -> Tuple[Optional[str], Optional[str]]:
+def extract_time_reference(text: str) -> Tuple[Optional[str], Optional[str], Optional[List[int]]]:
     """
-    Extracts specific clock time (e.g. '17:00') and time of day ('evening', 'morning').
+    Extracts specific clock time (e.g. '17:00'), time of day ('evening', 'morning'),
+    and specific time span constraints (e.g. [9, 16] for 9 AM to 4 PM).
     """
     if not text:
-        return None, None
+        return None, None, None
 
     text_lower = text.lower()
     time_str = None
     time_range = None
+    time_span = None
+    
+    def to_24(h: int, m_ampm: Optional[str]) -> int:
+        if m_ampm == "pm" and h < 12:
+            return h + 12
+        if m_ampm == "am" and h == 12:
+            return 0
+        return h
+
+    # 1. Range matching (e.g., "between 9 AM and 4 PM", "from 9 to 4 pm")
+    range_match = re.search(r"(?:from\s+|between\s+)?(\d{1,2})(?::\d{2})?\s*(am|pm)?\s*(?:to|and|-|until|till)\s*(\d{1,2})(?::\d{2})?\s*(am|pm)", text_lower)
+    if range_match:
+        start_hr = int(range_match.group(1))
+        start_am = range_match.group(2)
+        end_hr = int(range_match.group(3))
+        end_am = range_match.group(4)
+        
+        if not start_am:
+            # infer from end_am. If it's 9 to 4 pm, 9 is AM. If it's 2 to 4 pm, 2 is PM.
+            if end_am == "pm":
+                if start_hr < end_hr or start_hr == 12:
+                    start_am = "pm"
+                else:
+                    start_am = "am"
+            else:
+                start_am = end_am or "am"
+                
+        start_24 = to_24(start_hr, start_am)
+        end_24 = to_24(end_hr, end_am)
+        
+        if start_24 <= end_24:
+            time_span = [start_24, end_24]
+            # also set a fallback time_range
+            if start_24 < 12:
+                time_range = "morning"
+            elif start_24 < 17:
+                time_range = "afternoon"
+            else:
+                time_range = "evening"
+                
+            return f"{start_24:02d}:00", time_range, time_span
 
     # Clock time: e.g. "5 PM", "5:30 PM", "5pm", "17:00", "5 वाजता", "५ वाजता"
     m_pm = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", text_lower)
@@ -487,10 +531,7 @@ def extract_time_reference(text: str) -> Tuple[Optional[str], Optional[str]]:
         hour = int(m_pm.group(1))
         minute = int(m_pm.group(2) or 0)
         ampm = m_pm.group(3)
-        if ampm == "pm" and hour < 12:
-            hour += 12
-        elif ampm == "am" and hour == 12:
-            hour = 0
+        hour = to_24(hour, ampm)
         time_str = f"{hour:02d}:{minute:02d}"
         if 5 <= hour < 12:
             time_range = "morning"
@@ -500,7 +541,7 @@ def extract_time_reference(text: str) -> Tuple[Optional[str], Optional[str]]:
             time_range = "evening"
         else:
             time_range = "night"
-        return time_str, time_range
+        return time_str, time_range, None
 
     m_24h = re.search(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", text)
     if m_24h:
@@ -508,7 +549,7 @@ def extract_time_reference(text: str) -> Tuple[Optional[str], Optional[str]]:
         minute = int(m_24h.group(2))
         time_str = f"{hour:02d}:{minute:02d}"
         time_range = "evening" if 17 <= hour < 21 else ("morning" if 5 <= hour < 12 else "afternoon")
-        return time_str, time_range
+        return time_str, time_range, None
 
     # Marathi time: "5 वाजता", "५ वाजता"
     m_mr = re.search(r"(\d{1,2}|[०-९]{1,2})\s*वाजता", text)
@@ -522,7 +563,7 @@ def extract_time_reference(text: str) -> Tuple[Optional[str], Optional[str]]:
             hour_int += 12
         time_str = f"{hour_int:02d}:00"
         time_range = "evening" if "संध्याकाळी" in text or "सायंकाळी" in text or hour_int >= 17 else "morning"
-        return time_str, time_range
+        return time_str, time_range, None
 
     # Time of day keywords
     if any(k in text_lower for k in ["evening", "tonight", "संध्याकाळी", "सायंकाळी", "संध्याकाळ", "सायंकाळ"]):
@@ -534,7 +575,7 @@ def extract_time_reference(text: str) -> Tuple[Optional[str], Optional[str]]:
     elif any(k in text_lower for k in ["night", "रात्री", "रात्र"]):
         time_range = "night"
 
-    return time_str, time_range
+    return time_str, time_range, time_span
 
 
 def extract_activity_reference(text: str) -> Optional[str]:
@@ -666,20 +707,24 @@ class ConversationContextTracker:
 
 
         # 3. Resolve Time & Time Range
-        new_time, new_time_range = extract_time_reference(user_text)
-        if new_time or new_time_range:
+        new_time, new_time_range, new_time_span = extract_time_reference(user_text)
+        if new_time or new_time_range or new_time_span:
             time_val = new_time
             time_range = new_time_range
+            time_span = new_time_span
         elif found_dates:
             # If user explicitly switched dates ("What about Saturday?"), reset specific clock time
             time_val = None
             time_range = None
+            time_span = None
         elif prev:
             time_val = prev.time
             time_range = prev.time_range
+            time_span = prev.time_span
         else:
             time_val = None
             time_range = None
+            time_span = None
 
         # 4. Resolve Activity
         new_act = extract_activity_reference(user_text)
@@ -703,8 +748,9 @@ class ConversationContextTracker:
             resolved_date=resolved_date,
             time=time_val,
             time_range=time_range,
-            weather_intent=intent,
+            time_span=time_span,
             activity=activity,
+            weather_intent=intent,
             language=language,
             current_topic=f"{intent}_{active_location or 'unknown'}",
             last_updated=datetime.datetime.now(datetime.timezone.utc).isoformat()

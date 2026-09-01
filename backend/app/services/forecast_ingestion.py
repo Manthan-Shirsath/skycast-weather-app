@@ -31,7 +31,7 @@ INGESTION_INTERVAL_SECONDS = 3600 * 2  # Run every 2 hours
 
 class ForecastIngestionService:
     def __init__(self):
-        self.providers: List[ForecastProvider] = [
+        self.providers: list[ForecastProvider] = [
             EcmwfIfsProvider(),
             EcmwfAifsProvider(),
             NoaaGfsProvider(),

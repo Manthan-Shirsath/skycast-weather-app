@@ -81,13 +81,13 @@ export function WeatherHero({ isLoading, location, current, sun, hourly, onOpenW
           {/* Main Weather Information */}
           <div className="text-white w-full lg:w-auto flex flex-col drop-shadow-2xl">
             <div className="flex items-start">
-              <h1 className="text-[9rem] md:text-[11rem] font-black tracking-tighter leading-none" style={{ textShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
+              <h1 className="text-[6rem] sm:text-[9rem] md:text-[11rem] font-black tracking-tighter leading-none" style={{ textShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
                 {current?.tempC !== undefined ? Math.round(current.tempC) : '--'}
               </h1>
-              <span className="text-5xl md:text-7xl font-bold mt-4 ml-1 text-white/80">°</span>
+              <span className="text-4xl sm:text-5xl md:text-7xl font-bold mt-2 sm:mt-4 ml-1 text-white/80">°</span>
             </div>
             
-            <div className="flex items-center space-x-4 mb-8 -mt-2">
+            <div className="flex items-center space-x-2 sm:space-x-4 mb-6 sm:mb-8 mt-2 sm:-mt-2">
                <div className="bg-white/10 backdrop-blur-md p-2 rounded-2xl border border-white/20 shadow-lg">
                  <img 
                    src={`https://openweathermap.org/img/wn/${
@@ -98,15 +98,15 @@ export function WeatherHero({ isLoading, location, current, sun, hourly, onOpenW
                      }[(current?.icon || '').toLowerCase()] || '02d'
                    }@2x.png`} 
                    alt={current?.condition} 
-                   className="h-14 w-14 object-contain filter drop-shadow-lg scale-110"
+                   className="h-10 w-10 sm:h-14 sm:w-14 object-contain filter drop-shadow-lg scale-110"
                  />
                </div>
-               <span className="text-4xl md:text-5xl font-bold tracking-tight text-glow">
+               <span className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-glow line-clamp-1">
                  {current?.weather_code !== undefined ? t(`weather_codes.${current.weather_code}`) : current?.condition || '--'}
                </span>
             </div>
             
-            <div className="flex flex-wrap items-center gap-3 text-sm font-semibold">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm font-semibold">
               <div className="flex items-center space-x-2 bg-black/30 backdrop-blur-xl px-5 py-3 rounded-2xl border border-white/10 hover:bg-black/40 transition-all hover:-translate-y-1 shadow-lg">
                 <Droplets className="h-4 w-4 text-blue-400" />
                 <span className="text-white/90">{current?.humidity || 0}% {t('weather.humidity')}</span>

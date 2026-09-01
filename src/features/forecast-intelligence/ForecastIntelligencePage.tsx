@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api';
+
 
 interface ForecastValue {
   valid_time: string;
@@ -73,7 +75,7 @@ export default function ForecastIntelligencePage() {
     setAiLoading(true);
     setAiSummary(null);
     try {
-      const res = await fetch(`/api/forecast-intelligence/${encodeURIComponent(loc)}/analysis`);
+      const res = await apiFetch(`/api/forecast-intelligence/${encodeURIComponent(loc)}/analysis`);
       if (res.ok) {
         const json = await res.json();
         setAiSummary(json.analysis);
@@ -92,7 +94,7 @@ export default function ForecastIntelligencePage() {
     setLoading(true);
     setError(false);
     try {
-      const res = await fetch(`/api/forecast-intelligence/${encodeURIComponent(locationName)}`);
+      const res = await apiFetch(`/api/forecast-intelligence/${encodeURIComponent(locationName)}`);
       if (!res.ok) throw new Error('API Error');
       const json: IntelligenceResponse = await res.json();
       setData(json);

@@ -93,4 +93,12 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* MapLibre control adjustments for mobile */
+  @media (max-width: 1023px) {
+    .maplibregl-ctrl-bottom-right,
+    .mapboxgl-ctrl-bottom-right {
+      margin-bottom: 80px !important;
+    }
+  }
 }

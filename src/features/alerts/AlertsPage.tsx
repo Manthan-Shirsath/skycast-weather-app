@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
 import { useTranslation } from 'react-i18next';
+import { apiFetch } from '@/lib/api';
+
 
 export default function AlertsPage() {
   const { t } = useTranslation();
@@ -18,7 +20,7 @@ export default function AlertsPage() {
     async function fetchData() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/weather/alerts?city=${encodeURIComponent(city)}`);
+        const res = await apiFetch(`/api/weather/alerts?city=${encodeURIComponent(city)}`);
         if (res.ok) {
           const json = await res.json();
           setAlerts(json);

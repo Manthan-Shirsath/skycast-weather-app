@@ -4,6 +4,8 @@ import { MapPin, Search, Plus, Trash2, Loader2, Info } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { apiFetch } from '@/lib/api';
+
 
 // NOTE: The backend currently lacks a dedicated `/api/user/locations` persistence endpoint.
 // For now, this uses localStorage as a fallback, but a future backend expansion should 
@@ -41,7 +43,7 @@ export default function LocationsPage() {
         const results: Record<string, any> = {};
         await Promise.all(locations.map(async (city) => {
           try {
-            const res = await fetch(`/api/weather/current?city=${encodeURIComponent(city)}`);
+            const res = await apiFetch(`/api/weather/current?city=${encodeURIComponent(city)}`);
             if (res.ok) {
               results[city] = await res.json();
             }

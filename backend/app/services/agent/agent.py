@@ -11,7 +11,7 @@ import uuid
 import datetime
 import logging
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import httpx
 from dotenv import load_dotenv
 from sqlalchemy import select
@@ -746,9 +746,7 @@ class WeatherGPTAgent:
             or (context and context.time)
             or any(w in q for w in ["saturday", "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "शनिवार", "रविवार"])
         )
-        
         is_rain_check = (context and context.weather_intent == "rain_check") or "rain" in q or "पाऊस" in q or "baarish" in q
-
         if is_rain_check:
             from backend.app.services.agent.schemas import AnalyzeRainArgs
             from backend.app.services.agent.tools import analyze_rain_tool
@@ -756,13 +754,40 @@ class WeatherGPTAgent:
                 location=city,
                 date=context.resolved_date if context else None,
                 time=context.time if context else None,
-                time_range=context.time_range if context else None
+                time_range=context.time_range if context else None,
+                time_span=context.time_span if context else None
             ))
             
-            if language == "mr":
-                reply = f"{city} मध्ये पावसाचा अंदाज: {rain_res.get('summary')} (कमाल शक्यता: {rain_res.get('overall_chance')}%)"
+            time_desc = ""
+            if context and context.time_span:
+                # e.g. "through your 9 AM–4 PM window"
+                time_desc = f" through your {context.time_span[0]}:00–{context.time_span[1]}:00 window"
+            elif context and context.time_range:
+                time_desc = f" during the {context.time_range}"
             else:
-                reply = f"Rain analysis for {city}: {rain_res.get('summary')} (Max chance: {rain_res.get('overall_chance')}%)"
+                time_desc = " today"
+                
+            overall_chance = rain_res.get('overall_chance', 0)
+            if overall_chance >= 50:
+                advice = "Looks like you'll want an umbrella if you're heading out."
+                mr_advice = "बाहेर जाताना छत्री सोबत ठेवा."
+                prefix = "🌧️ Rain chances stay pretty high"
+                mr_prefix = "🌧️ पावसाची शक्यता आहे"
+            elif overall_chance >= 15:
+                advice = "Might be a good idea to stay updated just in case."
+                mr_advice = "पावसाची थोडी शक्यता आहे, त्यामुळे सावध रहा."
+                prefix = "🌦️ There's a slight chance of showers"
+                mr_prefix = "🌦️ पावसाचा थोडा धोका आहे"
+            else:
+                advice = "You should be good to go without an umbrella!"
+                mr_advice = "तुम्हाला छत्रीची आवश्यकता नाही!"
+                prefix = "☀️ No major rain expected"
+                mr_prefix = "☀️ जास्त पावसाची शक्यता नाही"
+            
+            if language == "mr":
+                reply = f"{mr_prefix} {city} मध्ये{time_desc}, कमाल शक्यता {overall_chance}% आहे. {mr_advice}"
+            else:
+                reply = f"{prefix} in {city}{time_desc}, peaking around {overall_chance}%. {advice}"
                 
             cards.append(CardItem(type="rain_timeline", data=rain_res))
             
@@ -772,6 +797,7 @@ class WeatherGPTAgent:
                 date=context.resolved_date if context else None,
                 time=context.time if context else None,
                 time_range=context.time_range if context else None,
+                time_span=context.time_span if context else None,
                 activity=context.activity if context else ("cricket" if is_cricket else None)
             ))
 
@@ -1014,7 +1040,7 @@ class WeatherGPTAgent:
         default_city: Optional[str],
         language: str = "en",
         user_role: str = "general_public"
-    ) -> (str, Optional[str], List[Dict[str, Any]]):
+    ) -> Tuple[str, Optional[str], List[Dict[str, Any]]]:
         """Loads session and message history from PostgreSQL, including user role."""
         sid = session_id or str(uuid.uuid4())
         location_ctx = default_city

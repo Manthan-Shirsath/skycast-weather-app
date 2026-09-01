@@ -28,6 +28,8 @@ import {
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { apiFetch } from '@/lib/api';
+
 
 export type MapLayerType = 'temperature' | 'radar' | 'satellite' | 'wind' | 'rain' | 'clouds' | 'pressure' | 'alerts';
 
@@ -364,7 +366,7 @@ export default function MapPage() {
   const fetchCitiesData = async () => {
     setLoadingCities(true);
     try {
-      const res = await fetch('/api/map/cities');
+      const res = await apiFetch('/api/map/cities');
       if (res.ok) {
         const json = await res.json();
         if (json.cities && Array.isArray(json.cities)) {
@@ -382,7 +384,7 @@ export default function MapPage() {
   const fetchRadarData = async () => {
     setRadarLoading(true);
     try {
-      const res = await fetch('/api/radar');
+      const res = await apiFetch('/api/radar');
       if (res.ok) {
         const json: RadarMetadata = await res.json();
         setRadarMeta(json);
@@ -448,7 +450,7 @@ export default function MapPage() {
     setPointData(null);
 
     try {
-      const res = await fetch(`/api/map/point?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}`);
+      const res = await apiFetch(`/api/map/point?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}`);
       if (res.ok) {
         const data = await res.json();
         setPointData(data);
@@ -549,7 +551,7 @@ export default function MapPage() {
         return (
           <div className="flex flex-col gap-1.5">
             <span className="text-[10px] font-bold text-sky-text-secondary uppercase">Precipitation Intensity</span>
-            <div className="flex w-full h-2 rounded bg-gradient-to-r from-blue-400 via-green-400 via-yellow-400 to-red-600"></div>
+            <div className="flex w-full h-2 rounded" style={{ background: 'linear-gradient(to right, #60a5fa, #4ade80, #facc15, #dc2626)' }}></div>
             <div className="flex justify-between text-[10px] text-sky-text-primary font-mono font-bold mt-0.5">
               <span>Light</span><span>Heavy</span>
             </div>
@@ -567,11 +569,11 @@ export default function MapPage() {
   return (
     <div className="flex flex-col h-full w-full bg-sky-background relative overflow-hidden font-sans">
       
-      {/* Top-Left Floating Controls */}
-      <div className="absolute top-4 left-4 z-20 flex flex-col gap-3 pointer-events-none">
+      {/* Top-Left / Bottom Floating Controls */}
+      <div className="absolute bottom-20 lg:bottom-auto lg:top-4 left-2 right-2 lg:left-4 lg:right-auto z-20 flex flex-col gap-2 lg:gap-3 pointer-events-none items-center lg:items-start">
         
         {/* Title & Stats */}
-        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl pointer-events-auto flex items-center gap-3 w-[320px]">
+        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl pointer-events-auto flex items-center gap-3 w-full max-w-[340px] lg:w-[320px]">
           <div className="bg-sky-primary text-white p-2.5 rounded-xl shadow-sm">
             <MapIcon className="h-5 w-5" />
           </div>
@@ -587,7 +589,7 @@ export default function MapPage() {
         </div>
 
         {/* Basemap & City Jump Controls */}
-        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl pointer-events-auto flex flex-col gap-2.5 w-[320px]">
+        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl pointer-events-auto flex flex-col gap-2.5 w-full max-w-[340px] lg:w-[320px]">
           <select
             className="w-full bg-slate-50 dark:bg-slate-950 text-sky-text-primary font-medium text-xs rounded-xl px-3 py-2.5 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-primary/50 transition-shadow"
             value={basemapTheme}
@@ -627,13 +629,13 @@ export default function MapPage() {
         </div>
       </div>
 
-      {/* Top-Right Floating Controls (Layer Selectors & Legend) */}
-      <div className="absolute top-4 right-4 z-20 flex flex-col items-end gap-3 pointer-events-none">
+      {/* Top-Right / Top Floating Controls (Layer Selectors & Legend) */}
+      <div className="absolute top-4 right-2 lg:right-4 z-20 flex flex-col items-end gap-2 lg:gap-3 pointer-events-none">
         
         {/* Layer Selector */}
-        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl p-2 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl pointer-events-auto flex flex-col w-[170px]">
-          <span className="text-[10px] font-bold text-sky-text-secondary tracking-widest uppercase px-3 py-1.5 mb-1 border-b border-slate-100 dark:border-slate-800/50">
-            Weather Layers
+        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl p-2 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl pointer-events-auto flex flex-col w-[140px] lg:w-[170px]">
+          <span className="text-[9px] lg:text-[10px] font-bold text-sky-text-secondary tracking-widest uppercase px-2 lg:px-3 py-1.5 mb-1 border-b border-slate-100 dark:border-slate-800/50">
+            Layers
           </span>
           <div className="flex flex-col gap-0.5 mt-1">
             <Button variant={activeLayer === 'temperature' ? 'default' : 'ghost'} size="sm" onClick={() => setActiveLayer('temperature')} className="justify-start h-8 px-3 text-xs rounded-lg">
@@ -681,6 +683,7 @@ export default function MapPage() {
           style={{ width: '100%', height: '100%' }}
           onClick={handleMapClick}
           cursor="crosshair"
+          cooperativeGestures={true}
           onLoad={(evt) => setupIndiaBoundaryOverlay(evt.target)}
           onStyleData={(evt) => setupIndiaBoundaryOverlay(evt.target)}
         >

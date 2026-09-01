@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/Badge';
 import { Progress } from '@/components/ui/Progress';
 import { useTranslation } from 'react-i18next';
+import { apiFetch } from '@/lib/api';
+
 
 export default function AgriculturePage() {
   const { t } = useTranslation();
@@ -18,7 +20,7 @@ export default function AgriculturePage() {
     async function fetchData() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/weather/dashboard?city=${encodeURIComponent(city)}`);
+        const res = await apiFetch(`/api/weather/dashboard?city=${encodeURIComponent(city)}`);
         if (res.ok) {
           const json = await res.json();
           setData(json);
