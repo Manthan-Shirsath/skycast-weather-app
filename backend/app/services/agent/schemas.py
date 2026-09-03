@@ -76,6 +76,7 @@ class AgricultureArgs(BaseModel):
 class RecommendationArgs(BaseModel):
     location: str = Field(..., description="City or location name for practical recommendation")
     activity: Optional[str] = Field("all", description="Activity name ('all', 'umbrella', 'jacket', 'run', 'outdoor_event', 'travel', 'drying_clothes')")
+    date: Optional[str] = Field(None, description="Optional target date (e.g. 'tomorrow', 'today', '2026-09-03', 'Saturday')")
 
 
 class VisualExplanationArgs(BaseModel):
@@ -161,4 +162,5 @@ class AgentResponse(BaseModel):
     sources: List[SourceItem] = Field(default_factory=list)
     data_status: str = "fresh"  # "fresh" | "stale" | "degraded"
     conversation_context: Optional[Dict[str, Any]] = None
+    is_fallback: bool = False
 

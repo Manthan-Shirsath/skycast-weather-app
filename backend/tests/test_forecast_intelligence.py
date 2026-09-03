@@ -56,9 +56,11 @@ def test_model_registry_validity():
     for model_id, meta in MODEL_REGISTRY.items():
         assert "id" in meta
         assert "name" in meta
-        assert "category" in meta
-        assert "description" in meta
-        assert "enabled" in meta
+        assert "organization" in meta
+        assert "methodology" in meta
+        assert "forecast_type" in meta
+        assert "availability" in meta
+        assert "how_it_forecasts" in meta
         assert "provider" in meta
         assert "forecast_horizon_days" in meta
         assert "update_cadence_hours" in meta

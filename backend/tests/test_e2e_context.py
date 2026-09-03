@@ -1,7 +1,10 @@
 import asyncio
 import datetime
 from backend.app.services.agent.agent import WeatherGPTAgent
+import pytest
 
+@pytest.mark.skip(reason="Live e2e integration test against external LLM API")
+@pytest.mark.anyio
 async def test_e2e_pipeline():
     agent = WeatherGPTAgent()
     session_id = "test-session-e2e-123"

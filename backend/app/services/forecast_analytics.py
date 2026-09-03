@@ -31,6 +31,8 @@ class ForecastAnalytics:
             for val in run.values:
                 # Fallback to 'deterministic' if representation doesn't exist on older schemas before migration fully applies
                 rep = getattr(val, "representation", "deterministic")
+                if not rep:
+                    rep = "deterministic"
                 
                 if val.variable not in var_time_map:
                     var_time_map[val.variable] = {}

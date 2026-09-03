@@ -10,6 +10,8 @@ from typing import Dict, Any, List, Optional, Tuple
 import logging
 
 from backend.app.core.cache import cache
+import httpx
+from backend.app.core.config import OPENWEATHER_API_KEY
 from backend.app.core.config import (
     TTL_CURRENT_WEATHER,
     TTL_MAP_WEATHER,

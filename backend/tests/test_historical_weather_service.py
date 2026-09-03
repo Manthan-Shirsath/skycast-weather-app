@@ -1,21 +1,35 @@
+
 import pytest
 import datetime
 import asyncio
 from backend.app.services.historical_weather_service import HistoricalWeatherService
 from backend.app.models.historical_coverage import HistoricalCoverage
 from backend.app.models.weather_snapshot import WeatherSnapshot
-from backend.app.core.database import async_session_factory
 from sqlalchemy import select, delete
 from unittest.mock import patch, AsyncMock, MagicMock
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from backend.app.models.weather_snapshot import Base
 
-def run_async(coro):
-    return asyncio.run(coro)
+# Create in-memory SQLite engine
+test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+mock_async_session_factory = async_sessionmaker(
+    bind=test_engine,
+    class_=AsyncSession,
+    expire_on_commit=False
+)
 
 async def cleanup_db():
-    async with async_session_factory() as session:
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with mock_async_session_factory() as session:
         await session.execute(delete(HistoricalCoverage).where(HistoricalCoverage.city == 'testcity'))
         await session.execute(delete(WeatherSnapshot).where(WeatherSnapshot.city == 'testcity'))
         await session.commit()
+
+@pytest.fixture(autouse=True)
+def mock_db_session():
+    with patch("backend.app.services.historical_weather_service.async_session_factory", mock_async_session_factory):
+        yield
 
 def test_group_into_ranges():
     dates = [
@@ -32,8 +46,8 @@ def test_group_into_ranges():
     assert ranges[1] == (datetime.date(2025, 8, 5), datetime.date(2025, 8, 7))
     assert ranges[2] == (datetime.date(2025, 8, 10), datetime.date(2025, 8, 10))
 
-def test_ensure_coverage_completely_missing():
-    async def _run():
+@pytest.mark.anyio
+async def test_ensure_coverage_completely_missing():
         await cleanup_db()
         with patch("backend.app.services.historical_weather_service.open_meteo_provider.geocode_city", new_callable=AsyncMock) as mock_geo:
             mock_geo.return_value = {"lat": 1.0, "lon": 2.0, "name": "TestCity", "country": "TC"}
@@ -66,19 +80,18 @@ def test_ensure_coverage_completely_missing():
                 
                 assert mock_get.call_count == 1
             
-            async with async_session_factory() as session:
+            async with mock_async_session_factory() as session:
                 snaps = (await session.execute(select(WeatherSnapshot).where(WeatherSnapshot.city == 'testcity'))).scalars().all()
                 assert len(snaps) == 2
                 assert snaps[0].temperature_c == 25.0
                 
                 covs = (await session.execute(select(HistoricalCoverage).where(HistoricalCoverage.city == 'testcity'))).scalars().all()
                 assert len(covs) == 2
-    run_async(_run())
 
-def test_ensure_coverage_completely_cached():
-    async def _run():
+@pytest.mark.anyio
+async def test_ensure_coverage_completely_cached():
         await cleanup_db()
-        async with async_session_factory() as session:
+        async with mock_async_session_factory() as session:
             session.add(HistoricalCoverage(city="testcity", coverage_date=datetime.date(2025, 8, 1), provider="open_meteo_archive"))
             session.add(HistoricalCoverage(city="testcity", coverage_date=datetime.date(2025, 8, 2), provider="open_meteo_archive"))
             await session.commit()
@@ -89,10 +102,9 @@ def test_ensure_coverage_completely_cached():
         with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
             await HistoricalWeatherService.ensure_coverage("testcity", start, end)
             assert mock_get.call_count == 0
-    run_async(_run())
 
-def test_ensure_coverage_idempotency_and_duplicates():
-    async def _run():
+@pytest.mark.anyio
+async def test_ensure_coverage_idempotency_and_duplicates():
         await cleanup_db()
         with patch("backend.app.services.historical_weather_service.open_meteo_provider.geocode_city", new_callable=AsyncMock) as mock_geo:
             mock_geo.return_value = {"lat": 1.0, "lon": 2.0, "name": "TestCity", "country": "TC"}
@@ -124,7 +136,7 @@ def test_ensure_coverage_idempotency_and_duplicates():
                 await HistoricalWeatherService.ensure_coverage("testcity", start, end)
                 
                 # Drop coverage to force refetch
-                async with async_session_factory() as session:
+                async with mock_async_session_factory() as session:
                     await session.execute(delete(HistoricalCoverage).where(HistoricalCoverage.city == 'testcity'))
                     await session.commit()
                     
@@ -132,7 +144,6 @@ def test_ensure_coverage_idempotency_and_duplicates():
                 await HistoricalWeatherService.ensure_coverage("testcity", start, end)
                 
             # Verify db insertion (should only have 2 rows total due to unique constraint)
-            async with async_session_factory() as session:
+            async with mock_async_session_factory() as session:
                 snaps = (await session.execute(select(WeatherSnapshot).where(WeatherSnapshot.city == 'testcity'))).scalars().all()
                 assert len(snaps) == 2
-    run_async(_run())

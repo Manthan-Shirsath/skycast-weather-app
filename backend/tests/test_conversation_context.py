@@ -70,15 +70,15 @@ def test_resolve_temporal_reference():
 
 
 def test_extract_time_reference():
-    time_val, time_range = extract_time_reference("Would 5 PM be a good time to play cricket?")
+    time_val, time_range, time_span = extract_time_reference("Would 5 PM be a good time to play cricket?")
     assert time_val == "17:00"
     assert time_range == "evening"
 
-    time_val, time_range = extract_time_reference("What about the evening?")
+    time_val, time_range, time_span = extract_time_reference("What about the evening?")
     assert time_val is None
     assert time_range == "evening"
 
-    time_val, time_range = extract_time_reference("संध्याकाळी ५ वाजता")
+    time_val, time_range, time_span = extract_time_reference("संध्याकाळी ५ वाजता")
     assert time_val == "17:00"
     assert time_range == "evening"
 

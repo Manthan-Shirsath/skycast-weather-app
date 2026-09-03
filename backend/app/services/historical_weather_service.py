@@ -171,8 +171,14 @@ class HistoricalWeatherService:
 
         # Persist to database using idempotent upsert
         async with async_session_factory() as session:
+            dialect = session.bind.dialect.name
+            if dialect == 'sqlite':
+                from sqlalchemy.dialects.sqlite import insert as dialect_insert
+            else:
+                from sqlalchemy.dialects.postgresql import insert as dialect_insert
+            
             # 1. Insert Snapshots
-            stmt = pg_insert(WeatherSnapshot).values(snapshot_dicts)
+            stmt = dialect_insert(WeatherSnapshot).values(snapshot_dicts)
             stmt = stmt.on_conflict_do_nothing(
                 index_elements=['city', 'timestamp']
             )
@@ -191,7 +197,7 @@ class HistoricalWeatherService:
             ]
             
             if coverage_dicts:
-                cov_stmt = pg_insert(HistoricalCoverage).values(coverage_dicts)
+                cov_stmt = dialect_insert(HistoricalCoverage).values(coverage_dicts)
                 cov_stmt = cov_stmt.on_conflict_do_nothing(
                     index_elements=['city', 'coverage_date']
                 )

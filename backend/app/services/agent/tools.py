@@ -74,34 +74,8 @@ async def analyze_rain_tool(args: AnalyzeRainArgs) -> Dict[str, Any]:
     data = await weather_hub.get_weather_for_city(loc_clean)
     hourly_series = data.get("hourlySeries", [])
     
-    today_iso = datetime.date.today().isoformat()
-    target_date_iso = today_iso
-    
-    if args.date:
-        d_lower = args.date.strip().lower()
-        if re.match(r"^\d{4}-\d{2}-\d{2}$", d_lower):
-            target_date_iso = d_lower
-        elif d_lower in ["tomorrow", "tmrw", "उद्या", "udya"]:
-            target_date_iso = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
-        elif d_lower in ["today", "आज", "now"]:
-            target_date_iso = today_iso
-        elif d_lower in ["day_after_tomorrow", "परवा"]:
-            target_date_iso = (datetime.date.today() + datetime.timedelta(days=2)).isoformat()
-        else:
-            # Check weekday
-            for day_word, target_weekday in [
-                ("monday", 0), ("tuesday", 1), ("wednesday", 2), ("thursday", 3),
-                ("friday", 4), ("saturday", 5), ("sunday", 6),
-                ("सोमवार", 0), ("मंगळवार", 1), ("बुधवार", 2), ("गुरुवार", 3),
-                ("शुक्रवार", 4), ("शनिवार", 5), ("रविवार", 6)
-            ]:
-                if day_word in d_lower:
-                    cur_wd = datetime.date.today().weekday()
-                    ahead = (target_weekday - cur_wd) % 7
-                    if ahead == 0:
-                        ahead = 7
-                    target_date_iso = (datetime.date.today() + datetime.timedelta(days=ahead)).isoformat()
-                    break
+    from backend.app.services.agent.context import normalize_target_date
+    target_date_iso = normalize_target_date(args.date)
 
     from backend.app.services.agent.rain_evaluator import RainEvaluator
     
@@ -191,35 +165,8 @@ async def get_forecast_tool(args: ForecastArgs) -> Dict[str, Any]:
     hourly_raw = data.get("hourly", [])
     hourly_series = data.get("hourlySeries", [])
 
-    today_iso = datetime.date.today().isoformat()
-
-    # 1. Resolve Target Date
-    target_date_iso = today_iso
-    if args.date:
-        d_lower = args.date.strip().lower()
-        if re.match(r"^\d{4}-\d{2}-\d{2}$", d_lower):
-            target_date_iso = d_lower
-        elif d_lower in ["tomorrow", "tmrw", "उद्या", "udya"]:
-            target_date_iso = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
-        elif d_lower in ["today", "आज", "now"]:
-            target_date_iso = today_iso
-        elif d_lower in ["day_after_tomorrow", "परवा"]:
-            target_date_iso = (datetime.date.today() + datetime.timedelta(days=2)).isoformat()
-        else:
-            # Check weekday
-            for day_word, target_weekday in [
-                ("monday", 0), ("tuesday", 1), ("wednesday", 2), ("thursday", 3),
-                ("friday", 4), ("saturday", 5), ("sunday", 6),
-                ("सोमवार", 0), ("मंगळवार", 1), ("बुधवार", 2), ("गुरुवार", 3),
-                ("शुक्रवार", 4), ("शनिवार", 5), ("रविवार", 6)
-            ]:
-                if day_word in d_lower:
-                    cur_wd = datetime.date.today().weekday()
-                    ahead = (target_weekday - cur_wd) % 7
-                    if ahead == 0:
-                        ahead = 7
-                    target_date_iso = (datetime.date.today() + datetime.timedelta(days=ahead)).isoformat()
-                    break
+    from backend.app.services.agent.context import normalize_target_date
+    target_date_iso = normalize_target_date(args.date)
 
     # Find matching daily item
     target_daily = None
@@ -691,7 +638,8 @@ async def get_weather_recommendations_tool(args: RecommendationArgs) -> Dict[str
     from backend.app.services.recommendation_service import RecommendationService
     return await RecommendationService.get_recommendations(
         city_name=args.location,
-        activity=args.activity or "all"
+        activity=args.activity or "all",
+        date=args.date
     )
 
 # ==============================================================================

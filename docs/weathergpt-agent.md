@@ -57,28 +57,38 @@ flowchart TD
 
 ---
 
-## 4. Security & Prompt Injection Defense
+## 4. Security, Guardrails & Execution Hooks
 
 - **Trust Boundaries**: User queries and tool outputs are treated strictly as **DATA**, never as instructions.
-- **Whitelist Execution**: Only the 9 registered tool functions in `TOOL_REGISTRY` can be called. Arbitrary Python functions, system commands, or external URLs are rejected with structured errors.
-- **Argument Validation**: All tool arguments are strongly validated using Pydantic models with type checking and length limits before execution.
+- **Whitelist Execution**: Only registered tool functions in `TOOL_REGISTRY` can be called. Arbitrary Python functions, system commands, or external URLs are rejected with structured errors.
+- **Tool Guardrails (`guardrails.py`)**:
+  - **Prompt Injection & Adversarial Filter**: Evaluates user inputs and structured arguments for jailbreak patterns, system prompt overrides, and data exfiltration markers.
+  - **Domain & Parameter Boundary Checks**: Bounds coordinate ranges (`-90 <= lat <= 90`, `-180 <= lon <= 180`), enforces forecast horizons (1-16 days), and verifies valid city names.
+  - **Output Sanitization**: Strips sensitive internal keys, server traces, or ungrounded artifacts before delivery.
+  - **Rate Limiting**: Throttles burst tool executions per session.
+- **Pre & Post Execution Hooks (`hooks.py`)**:
+  - **Pre-execution telemetry**: Inspects incoming tool arguments, checks cache viability, and logs call context.
+  - **Post-execution verification**: Validates output consistency, measures execution latency, and attaches audit metadata.
+- **Bounded Tool Calls**: Hard upper limit of `MAX_TOOL_CALLS = 8` per conversational turn to prevent infinite loops.
 - **Timeouts**: Every tool execution is wrapped in an `asyncio.wait_for(timeout=10.0)` guard.
 - **Zero Credential Exposure**: API keys and secrets are never passed into model context, tool arguments, or client response payloads.
 
 ---
 
-## 5. PostgreSQL Memory Model
+## 5. PostgreSQL Memory Model & Temporal Context Grounding
 
-Persistent multi-turn conversation memory is stored in PostgreSQL:
+Persistent multi-turn conversation memory and temporal context tracking:
 
+- **Temporal Grounding (`context.py`)**:
+  - Automatically resolves relative date references (*"tomorrow"*, *"this Friday"*, *"next week"*, *"yesterday"*) to exact ISO calendar dates relative to local time.
+  - Retains multi-turn entity state (current active city, selected date range, monitored metrics) across conversational turns.
 - **`chat_sessions` Table**:
   - `id`: UUID string (Primary Key)
   - `user_id`: Optional user identifier
   - `title`: Session topic or headline
   - `location_context`: Last resolved active location (e.g. Pune)
-  - `language`: Conversation language (`en`)
+  - `language`: Conversation language (`en`, `mr`, `hi`, etc.)
   - `created_at`, `updated_at`: UTC timestamps
-
 - **`chat_messages` Table**:
   - `id`: BigInteger (Primary Key)
   - `session_id`: Foreign Key referencing `chat_sessions.id` (Indexed)
@@ -91,7 +101,7 @@ Persistent multi-turn conversation memory is stored in PostgreSQL:
 
 ## 6. Structured Response Schema (Backward Compatible)
 
-The API response schema maintains 100% backward compatibility with the existing React frontend client while adding rich metadata for future interactive cards:
+The API response schema maintains 100% backward compatibility with the existing React frontend client while adding rich metadata for interactive cards:
 
 ```json
 {
@@ -132,12 +142,11 @@ The API response schema maintains 100% backward compatibility with the existing 
 
 ---
 
-## 7. Why LangGraph is Not Currently Required
+## 7. Multi-Agent Specialist Delegators (`multi_agent.py`)
 
-LangGraph is designed for complex cyclic state machines, human-in-the-loop branching workflows, and multi-agent coordination. WeatherGPT currently operates as a **bounded, single-agent tool orchestration loop**:
-- Linear request-response lifecycle with up to $N$ sequential function calls.
-- Fast execution with zero external graph framework overhead.
-- Direct integration with existing FastAPI async pipelines and PostgreSQL sessions.
-- Easier to test, debug, maintain, and audit for security boundaries.
+For advanced domain tasks, WeatherGPT orchestrates specialized delegate modules:
+- **Risk Specialist Agent**: Evaluates severe convective hazards, IMD warning criteria, threshold escalations, and precautionary advice.
+- **Agricultural Specialist Agent**: Analyzes soil moisture, evapotranspiration, rainfall timing, and crop-specific management recommendations.
+- **Historical & Trend Analyst Agent**: Computes multi-year anomalies, baseline shifts, and seasonal trend variations.
+- **Bounded Orchestration**: All specialists share the same Central Weather Data Hub and security guardrails, ensuring zero hallucination across specialized domains.
 
-If future product requirements introduce multi-agent debates, hierarchical agent swarms, or asynchronous human approvals, a graph framework can be cleanly integrated on top of the existing `ToolExecutor` and `WeatherDataHub` abstractions.

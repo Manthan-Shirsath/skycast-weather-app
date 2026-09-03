@@ -222,6 +222,52 @@ def extract_explicit_locations(text: str) -> List[str]:
     return found
 
 
+def normalize_target_date(date_str: Optional[str], base_date: Optional[datetime.date] = None) -> str:
+    """
+    Centralized temporal normalization helper.
+    Resolves natural language dates ('today', 'tomorrow', 'day after tomorrow', 'day_after_tomorrow',
+    'Saturday', ISO date strings, Marathi terms) to an ISO YYYY-MM-DD string.
+    """
+    today = base_date or datetime.date.today()
+    today_iso = today.isoformat()
+
+    if not date_str or not str(date_str).strip():
+        return today_iso
+
+    d_clean = str(date_str).strip().lower()
+
+    # 1. Exact ISO date YYYY-MM-DD
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", d_clean):
+        return d_clean
+
+    # 2. Day after tomorrow (must precede 'tomorrow' to avoid substring matching)
+    if any(k in d_clean for k in [
+        "day after tomorrow", "day_after_tomorrow", "the day after tomorrow",
+        "परवा", "parwa", "parva", "day-after-tomorrow"
+    ]):
+        return (today + datetime.timedelta(days=2)).isoformat()
+
+    # 3. Tomorrow
+    if any(k in d_clean for k in ["tomorrow", "tmrw", "उद्या", "udya"]):
+        return (today + datetime.timedelta(days=1)).isoformat()
+
+    # 4. Today / Now / Tonight
+    if any(k in d_clean for k in ["today", "now", "currently", "tonight", "आज", "सध्या"]):
+        return today_iso
+
+    # 5. Weekdays (e.g. Saturday, Sunday, शनिवारी)
+    for day_word, target_weekday in WEEKDAYS_MAP.items():
+        pattern = rf"\b{re.escape(day_word)}\b" if day_word.isascii() else re.escape(day_word)
+        if re.search(pattern, d_clean):
+            cur_wd = today.weekday()
+            ahead = (target_weekday - cur_wd) % 7
+            if ahead == 0:
+                ahead = 7
+            return (today + datetime.timedelta(days=ahead)).isoformat()
+
+    return today_iso
+
+
 def resolve_temporal_reference(
     text: str,
     base_date: Optional[datetime.date] = None,
@@ -245,6 +291,11 @@ def resolve_temporal_reference(
     if any(k in text_lower for k in ["today", "right now", "currently", "now", "आज", "सध्या", "सध्याचे"]):
         return "today", "today", today.isoformat()
 
+    # Day after tomorrow (Checked BEFORE tomorrow to prevent substring clash)
+    if any(k in text_lower for k in ["day after tomorrow", "day_after_tomorrow", "the day after tomorrow", "परवा", "parwa", "parva", "day-after-tomorrow"]):
+        target = today + datetime.timedelta(days=2)
+        return "day_after_tomorrow", "the day after tomorrow", target.isoformat()
+
     # Tomorrow / Tomorrow evening / etc.
     if any(k in text_lower for k in [
         "tomorrow morning", "tomorrow afternoon", "tomorrow evening", "tomorrow night",
@@ -253,11 +304,6 @@ def resolve_temporal_reference(
     ]):
         target = today + datetime.timedelta(days=1)
         return "tomorrow", "tomorrow", target.isoformat()
-
-    # Day after tomorrow
-    if any(k in text_lower for k in ["day after tomorrow", "परवा", "parwa"]):
-        target = today + datetime.timedelta(days=2)
-        return "day_after_tomorrow", "the day after tomorrow", target.isoformat()
 
     # Weekend / This weekend
     if any(k in text_lower for k in ["this weekend", "the weekend", "weekend", "वीकेंड", "शनिवार-रविवार"]):
@@ -329,6 +375,11 @@ def resolve_temporal_references(
     elif any(k in text_lower for k in ["today", "right now", "currently", "now", "आज", "सध्या", "सध्याचे"]):
         found_dates.append(("today", "today", today.isoformat()))
 
+    # Day after tomorrow (Checked BEFORE tomorrow)
+    if any(k in text_lower for k in ["day after tomorrow", "day_after_tomorrow", "the day after tomorrow", "परवा", "parwa", "parva", "day-after-tomorrow"]):
+        target = today + datetime.timedelta(days=2)
+        found_dates.append(("day_after_tomorrow", "the day after tomorrow", target.isoformat()))
+
     if any(k in text_lower for k in [
         "tomorrow morning", "tomorrow afternoon", "tomorrow evening", "tomorrow night",
         "उद्या सकाळी", "उद्या दुपारी", "उद्या संध्याकाळी", "उद्या रात्री",
@@ -336,10 +387,6 @@ def resolve_temporal_references(
     ]):
         target = today + datetime.timedelta(days=1)
         found_dates.append(("tomorrow", "tomorrow", target.isoformat()))
-
-    if any(k in text_lower for k in ["day after tomorrow", "परवा", "parwa"]):
-        target = today + datetime.timedelta(days=2)
-        found_dates.append(("day_after_tomorrow", "the day after tomorrow", target.isoformat()))
 
     if any(k in text_lower for k in ["this weekend", "the weekend", "weekend", "वीकेंड", "शनिवार-रविवार"]):
         cur_wd = today.weekday()

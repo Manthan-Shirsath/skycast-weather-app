@@ -32,11 +32,11 @@ def test_forecast_analytics_spread_and_consensus():
     assert timeline[0]["timestamp"] == t1.isoformat()
     assert timeline[0]["min"] == 20.0
     assert timeline[0]["max"] == 22.0
-    assert timeline[0]["spread"] == 2.0
+    assert timeline[0]["model_disagreement"] == 2.0
     assert timeline[0]["consensus"] == 21.0
     assert timeline[0]["agreement"] == "moderate" # threshold is 1 for high, 2 for mod
     
-    assert timeline[1]["spread"] == 1.0
+    assert timeline[1]["model_disagreement"] == 1.0
     assert timeline[1]["agreement"] == "high"
     
     # Periods test
@@ -58,5 +58,6 @@ def test_missing_model_for_timestamp():
     run2.values = [] # Missing value
     
     analytics = ForecastAnalytics.analyze([run1, run2])
-    # Timeline should be empty because we need at least 2 models to compute spread, so the variable is skipped entirely
-    assert "temperature" not in analytics
+    # Timeline should not be empty because we allow single models to be present
+    assert "temperature" in analytics
+    assert analytics["temperature"]["timeline"][0]["model_disagreement"] == 0.0

@@ -20,7 +20,7 @@ class WeatherSnapshot(Base):
     """
     __tablename__ = "weather_snapshots"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     timestamp = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
     city = Column(String(100), nullable=False, index=True)
     display_location = Column(String(255), nullable=True)
@@ -48,7 +48,7 @@ class WeatherSnapshot(Base):
     active_hazards = Column(Text, nullable=True)  # Comma-separated or JSON string of active hazards
 
     __table_args__ = (
-        Index("idx_weather_snapshots_city_timestamp", "city", "timestamp"),
+        Index("idx_weather_snapshots_city_timestamp", "city", "timestamp", unique=True),
         Index("idx_weather_snapshots_timestamp", "timestamp"),
     )
 

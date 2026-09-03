@@ -92,5 +92,13 @@ Thumbs.db
 *.dump
 postgres_data/
 
+# Deployment & Vercel
 .vercel
-.env*
+
+# Audit & Scratch (Internal analysis & scratch scripts)
+audit/
+scratch/
+lint_output.txt
+slice_collage.py
+slice_fixed.py
+

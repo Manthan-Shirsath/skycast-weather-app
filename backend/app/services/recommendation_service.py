@@ -21,10 +21,11 @@ class RecommendationService:
     @staticmethod
     async def get_recommendations(
         city_name: str,
-        activity: str = "all"
+        activity: str = "all",
+        date: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Generates grounded advisory recommendations for practical everyday scenarios.
+        Generates grounded advisory recommendations for practical everyday scenarios with date awareness.
         """
         clean_city = city_name.strip()
         act_clean = (activity or "all").strip().lower()
@@ -36,17 +37,46 @@ class RecommendationService:
                 "message": f"Unable to retrieve current weather for '{clean_city}' to compute recommendations."
             }
 
-        temp_c = weather.get("tempC", 24)
-        feels_like_c = weather.get("feelsLikeC", temp_c)
-        humidity = weather.get("humidity", 50)
-        wind_kmh = weather.get("windSpeedKmh", 10)
-        condition = weather.get("condition", "Clear")
-        insight = weather.get("insight", {})
-        details = weather.get("details", {})
-        rain_chance = insight.get("rainChance", 0)
-        precipitation_mm = details.get("precipitationMm", 0.0)
+        from backend.app.services.agent.context import normalize_target_date
+        target_date_iso = normalize_target_date(date)
+        today_iso = datetime.date.today().isoformat()
+        is_future_target = (target_date_iso != today_iso)
 
         daily = weather.get("daily", [])
+        target_daily = None
+        if is_future_target and daily:
+            for d in daily:
+                if d.get("date_iso") == target_date_iso:
+                    target_daily = d
+                    break
+            if not target_daily:
+                # If target is tomorrow, fallback to daily[1] if available
+                if target_date_iso == (datetime.date.today() + datetime.timedelta(days=1)).isoformat() and len(daily) > 1:
+                    target_daily = daily[1]
+                else:
+                    target_daily = daily[0]
+
+        if target_daily:
+            temp_c = target_daily.get("high_c", target_daily.get("high", weather.get("tempC", 24)))
+            feels_like_c = temp_c
+            humidity = weather.get("humidity", 50)
+            wind_kmh = target_daily.get("wind_speed_max_kmh", target_daily.get("windSpeed", weather.get("windSpeedKmh", 10)))
+            condition = target_daily.get("condition", "Cloudy")
+            rain_chance = target_daily.get("daily_precipitation_probability", target_daily.get("rainChance", 0))
+            precipitation_mm = target_daily.get("precipitation_sum_mm", target_daily.get("precipitation", 0.0))
+            date_label = target_daily.get("day", target_date_iso)
+        else:
+            temp_c = weather.get("tempC", 24)
+            feels_like_c = weather.get("feelsLikeC", temp_c)
+            humidity = weather.get("humidity", 50)
+            wind_kmh = weather.get("windSpeedKmh", 10)
+            condition = weather.get("condition", "Clear")
+            insight = weather.get("insight", {})
+            details = weather.get("details", {})
+            rain_chance = insight.get("rainChance", 0)
+            precipitation_mm = details.get("precipitationMm", 0.0)
+            date_label = "today"
+
         alerts = weather.get("alerts", [])
         has_severe_alert = any(a.get("severity") in ["orange", "red", "warning", "severe"] for a in alerts)
 
@@ -62,9 +92,9 @@ class RecommendationService:
                 "emoji": "☂️",
                 "reasons": [
                     f"Precipitation probability is {rain_chance}%.",
-                    f"Current condition: {condition} with {precipitation_mm}mm precipitation."
+                    f"Expected condition: {condition} with {precipitation_mm}mm precipitation on {date_label}."
                 ],
-                "action": "Keep an umbrella or raincoat accessible today."
+                "action": f"Keep an umbrella or raincoat accessible {date_label}."
             }
         else:
             recs["umbrella"] = {
@@ -75,9 +105,9 @@ class RecommendationService:
                 "emoji": "☀️",
                 "reasons": [
                     f"Precipitation chance is low ({rain_chance}%).",
-                    f"Conditions are expected to remain {condition.lower()}."
+                    f"Conditions on {date_label} are expected to remain {condition.lower()}."
                 ],
-                "action": "You can leave the umbrella at home."
+                "action": f"You can leave the umbrella at home for {date_label}."
             }
 
         # 2. Jacket Recommendation
@@ -223,6 +253,7 @@ class RecommendationService:
             "status": "ready",
             "location": weather.get("city", clean_city),
             "display_location": weather.get("displayLocation", clean_city),
+            "target_date": target_date_iso,
             "weather_context": {
                 "temperature_c": temp_c,
                 "feels_like_c": feels_like_c,

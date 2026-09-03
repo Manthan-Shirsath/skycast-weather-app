@@ -7,7 +7,7 @@ def test_rain_evaluator_dry_day():
         for h in range(24)
     ]
     
-    result = RainEvaluator.evaluate_rain("Pune", "2026-08-30", None, hourly_series)
+    result = RainEvaluator.evaluate_rain("Pune", "2026-08-30", None, None, hourly_series)
     
     assert result["overall_chance"] == 0
     assert result["total_precipitation_mm"] == 0.0
@@ -22,7 +22,7 @@ def test_rain_evaluator_heavy_rain_evening():
         for h in range(24)
     ]
     
-    result = RainEvaluator.evaluate_rain("Pune", "2026-08-30", None, hourly_series)
+    result = RainEvaluator.evaluate_rain("Pune", "2026-08-30", None, None, hourly_series)
     
     assert result["overall_chance"] == 80
     assert result["total_precipitation_mm"] == 8.0
@@ -43,7 +43,7 @@ def test_rain_evaluator_time_range_filter():
         for h in range(24)
     ]
     
-    result = RainEvaluator.evaluate_rain("Pune", "2026-08-30", "evening", hourly_series)
+    result = RainEvaluator.evaluate_rain("Pune", "2026-08-30", "evening", None, hourly_series)
     
     # Evening is 17 to 21
     assert result["overall_chance"] == 80

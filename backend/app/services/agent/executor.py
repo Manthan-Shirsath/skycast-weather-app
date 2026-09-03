@@ -112,8 +112,11 @@ class ToolExecutor:
 
         # 2. Execute with bounded timeout
         try:
+            coro = func(validated_args)
+            if not asyncio.iscoroutine(coro) and not hasattr(coro, '__await__'):
+                logger.error(f"FATAL: func {func} did not return a coroutine! Returned {type(coro)}")
             raw_result = await asyncio.wait_for(
-                func(validated_args),
+                coro,
                 timeout=DEFAULT_TOOL_TIMEOUT_SECONDS
             )
             return ToolExecutionResult(
@@ -138,3 +141,64 @@ class ToolExecutor:
                 data=None,
                 error=f"Tool '{tool_name}' failed: {str(exc)}"
             )
+
+    @classmethod
+    def get_openai_tools(cls, tool_names: list[str] = None):
+        from agents import FunctionTool
+        import json
+        
+        def _map_tool_to_card_type(tool_name: str) -> str:
+            mapping = {
+                "get_current_weather": "current_weather",
+                "get_forecast": "forecast",
+                "get_weather_risk": "risk",
+                "get_weather_alerts": "alert",
+                "get_historical_weather": "historical",
+                "get_weather_trends": "historical",
+                "search_location": "location",
+                "get_data_freshness": "data_status",
+                "get_agriculture_advice": "agriculture",
+                "get_weather_recommendations": "recommendation",
+                "show_visual_explanation": "visual_explanation",
+                "compare_locations": "location_comparison",
+                "compare_dates": "date_comparison",
+                "show_weather_alert": "weather_alert",
+                "analyze_rain": "rain_timeline"
+            }
+            return mapping.get(tool_name)
+            
+        from backend.app.services.agent.guardrails import (
+            weather_tool_input_guardrail,
+            weather_tool_output_guardrail
+        )
+        
+        tools = []
+        for tool_name, (schema_cls, func) in TOOL_REGISTRY.items():
+            if tool_names is not None and tool_name not in tool_names:
+                continue
+            
+            # Create a closure for each tool
+            def create_invoke(t_name):
+                async def on_invoke(ctx, args_data):
+                    if isinstance(args_data, str):
+                        args_dict = json.loads(args_data)
+                    else:
+                        args_dict = args_data
+                        
+                    res = await cls.execute(t_name, args_dict)
+                    if not res.success:
+                        return {"error": res.error}
+                    return res.data
+                return on_invoke
+                
+            tool = FunctionTool(
+                name=tool_name,
+                description=func.__doc__ or f"Execute {tool_name}",
+                params_json_schema=schema_cls.model_json_schema(),
+                on_invoke_tool=create_invoke(tool_name),
+                strict_json_schema=False,
+                tool_input_guardrails=[weather_tool_input_guardrail],
+                tool_output_guardrails=[weather_tool_output_guardrail]
+            )
+            tools.append(tool)
+        return tools
