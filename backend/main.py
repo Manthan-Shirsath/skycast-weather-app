@@ -89,7 +89,6 @@ def ensure_single_instance(host: str = "127.0.0.1", port: int = 8000) -> bool:
     Ensure exactly one active backend instance runs on port 8000.
     If a stale/orphaned Python backend process occupies port 8000 from a previous dev run,
     terminate it cleanly so the new dev session can bind without WinError 10048.
-    Also handles TIME_WAIT sockets from rapid restarts on Windows.
     """
     import socket
     import time
@@ -97,17 +96,17 @@ def ensure_single_instance(host: str = "127.0.0.1", port: int = 8000) -> bool:
 
     current_pid = os.getpid()
 
-    # 1. Test socket binding by checking connection
+    # 1. Quick probe to see if port 8000 is open
     test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     result = test_sock.connect_ex((host, port))
     test_sock.close()
     
     if result != 0:
-        return True
+        return True  # Port is completely free!
         
     logger.warning("⚠️ Port %d is currently in use. Checking for stale backend processes...", port)
 
-    # 2. Inspect connections to find PID on port
+    # 2. Inspect connections to find process on port
     stale_pid = None
     try:
         for conn in psutil.net_connections(kind="inet"):
@@ -133,27 +132,21 @@ def ensure_single_instance(host: str = "127.0.0.1", port: int = 8000) -> bool:
                 time.sleep(1)
                 return True
             else:
-                logger.error("❌ Port %d is in use by non-python process '%s' (PID %d). Cannot auto-terminate.", port, proc_name, stale_pid)
+                logger.error("❌ Port %d is in use by '%s' (PID %d, e.g. Docker container). Please stop it first.", port, proc_name, stale_pid)
                 return False
         except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
             logger.warning("Could not terminate process PID %d: %s", stale_pid, e)
 
-    # 3. No LISTEN process found — likely TIME_WAIT sockets from a recent crash.
-    #    Wait briefly for them to clear.
-    logger.info("⏳ No active LISTEN process on port %d. Waiting for TIME_WAIT sockets to clear...", port)
-    for attempt in range(6):
-        time.sleep(2)
-        try:
-            probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            probe.bind((host, port))
-            probe.close()
-            logger.info("✓ Port %d is now available (attempt %d).", port, attempt + 1)
+    # If no specific LISTEN process found, wait up to 3s for any socket cleanup
+    for _ in range(3):
+        time.sleep(1)
+        test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        res = test_sock.connect_ex((host, port))
+        test_sock.close()
+        if res != 0:
             return True
-        except OSError:
-            pass
 
-    logger.warning("⚠️ Port %d still in TIME_WAIT after waiting. Will attempt bind anyway.", port)
+    logger.warning("⚠️ Port %d is still occupied. Attempting to start server...", port)
     return True
 
 
@@ -164,4 +157,5 @@ if __name__ == "__main__":
     else:
         logger.error("❌ Aborting startup to prevent duplicate competing backend instances.")
         sys.exit(1)
+
 
