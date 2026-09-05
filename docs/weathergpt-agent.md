@@ -150,3 +150,29 @@ For advanced domain tasks, WeatherGPT orchestrates specialized delegate modules:
 - **Historical & Trend Analyst Agent**: Computes multi-year anomalies, baseline shifts, and seasonal trend variations.
 - **Bounded Orchestration**: All specialists share the same Central Weather Data Hub and security guardrails, ensuring zero hallucination across specialized domains.
 
+---
+
+## 8. Multi-Mode Agent Architecture & Central Registry (`registry.py`)
+
+WeatherGPT provides direct, domain-tailored agent modes selectable by users or API clients via `ChatRequest.agent_mode`:
+
+| Mode | Key Capabilities | Restricted Tool Set | Anti-Hallucination Guardrail |
+| :--- | :--- | :--- | :--- |
+| **`general`** (Default) | Real-time weather, hourly & multi-day forecasts, comparisons, activity planning. | All core weather tools | Strict grounding against central weather hub. |
+| **`agriculture`** | Crop stress evaluation, spray/irrigation windows, soil moisture, harvesting risk. | `get_current_weather`, `get_forecast`, `get_weather_risk`, `get_agricultural_advisory` | Explicit validation against `CROP_THRESHOLDS` (wheat, rice, cotton, sugarcane, tomato). Rejects unsupported crops explicitly. |
+| **`disaster`** | Severe convective storm tracking, heatwaves, extreme rain, flood risk, official warnings. | `get_weather_risk`, `get_weather_alerts`, `get_current_weather`, `get_forecast` | Distinguishes between IMD official warnings (via CAP feed) and SkyCast algorithmic risk scores. |
+| **`urban`** | City commute disruption, rain impact, heat stress, outdoor work safety. | `get_current_weather`, `get_forecast`, `get_weather_risk`, `get_weather_alerts` | Grounded exclusively on measured weather; marks traffic/AQI explicitly as unavailable when unmeasured. |
+| **`research`** | Historical weather archives, climate baseline comparisons, temperature/rainfall anomalies. | `get_historical_weather_summary`, `get_historical_weather`, `get_weather_trends`, `get_current_weather` | Connects directly to Open-Meteo Historical Archive API for statistical aggregation without hardcoded values. |
+| **`aviation`** | METAR/TAF briefings, crosswind calculation, flight level turbulence. | Coming soon disclaimer | Refuses to fabricate aviation telemetry until verified sensors are connected. |
+| **`marine`** | Wave height, sea swell, tidal currents, offshore maritime safety. | Coming soon disclaimer | Refuses to fabricate marine oceanography until buoy streams are active. |
+
+---
+
+## 9. Official IMD CAP Feed Provider (`imd_cap.py`)
+
+SkyCast integrates real-time official Common Alerting Protocol (CAP) RSS feeds from the WMO Alert Hub for India Meteorological Department (IMD) warnings:
+- **Hierarchical Location Matching**: Alerts are mapped with explicit specificity levels (`city` > `district` > `state` > `regional`). State-level alerts are explicitly flagged as regional alerts to prevent false city-level alarms.
+- **Normalized Schema**: Converted into standard `OfficialAlert` records with severity, urgency, certainty, published timestamp, and official action instructions.
+- **Fail-Safe Operation**: If the upstream CAP feed is temporarily unreachable, SkyCast gracefully relies on internal deterministic risk algorithms while clearly notifying the user.
+
+
