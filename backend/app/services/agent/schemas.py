@@ -39,6 +39,14 @@ class AnalyzeRainArgs(BaseModel):
     time_span: Optional[List[int]] = Field(None, description="Exact hour span if requested (e.g. [9, 16])")
 
 
+class ClimateResearchArgs(BaseModel):
+    location: str = Field(..., description="City or location name to retrieve historical weather data for")
+    start_date: Optional[str] = Field(None, description="Start date in YYYY-MM-DD format (defaults to 30 days ago)")
+    end_date: Optional[str] = Field(None, description="End date in YYYY-MM-DD format (defaults to yesterday)")
+    metric: Optional[str] = Field(None, description="Specific metric focus: 'temperature', 'precipitation', 'wind', 'humidity', or None for all")
+    compare_period: Optional[str] = Field(None, description="An optional prior period to compare against, in YYYY-MM-DD/YYYY-MM-DD format")
+
+
 class RiskArgs(BaseModel):
     location: str = Field(..., description="City or location name to evaluate Skycast meteorological risk for")
 

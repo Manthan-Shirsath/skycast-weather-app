@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 from backend.app.core.config import TTL_ALERTS
 from backend.app.core.cache import cache
 from backend.app.services.alert_engine import SkycastRiskEngine
-from backend.app.services.weather_hub import weather_hub
+from backend.app.services.weather_hub import weather_hub, KEY_MAP_CITIES
 
 logger = logging.getLogger("skycast.alert_service")
 
@@ -42,6 +42,50 @@ class AlertDetectionService:
             display_location=weather_data.get("displayLocation", city_name)
         )
 
+        official_data = await weather_hub.get_official_alerts()
+        official_alerts_list = []
+        has_official = False
+        feed_status = official_data.get("official_alerts_status", "unavailable")
+
+        if feed_status == "ready":
+            loc_admin1 = ""
+            if "location" in weather_data and isinstance(weather_data["location"], dict):
+                loc_admin1 = weather_data["location"].get("region", "").lower()
+            if not loc_admin1:
+                loc_admin1 = weather_data.get("state", "").lower()
+
+            for alert in official_data.get("alerts", []):
+                areas_lower = [a.lower() for a in alert.get("areas", [])]
+                desc_lower = alert.get("description", "").lower()
+
+                match_level = "none"
+                if clean_city and (clean_city in desc_lower or clean_city in areas_lower):
+                    match_level = "city"
+                elif loc_admin1 and (loc_admin1 in desc_lower or loc_admin1 in areas_lower):
+                    # It's a state match, check if it specifies another known city instead
+                    other_cities = [
+                        c["name"].lower() for c in KEY_MAP_CITIES 
+                        if c["state"].lower() == loc_admin1 and c["name"].lower() != clean_city
+                    ]
+                    if any(c in desc_lower for c in other_cities):
+                        match_level = "none" # Unrelated city in the same state
+                    else:
+                        match_level = "state"
+
+                if match_level != "none":
+                    alert_copy = dict(alert)
+                    alert_copy["location_match_level"] = match_level
+                    official_alerts_list.append(alert_copy)
+                    has_official = True
+
+        disclaimer = "Skycast weather risks are derived from open numerical weather data based on published IMD warning criteria. They are NOT official IMD warnings."
+        if has_official:
+            disclaimer = "Includes active official IMD/government warnings. Skycast risks are supplemental."
+        elif feed_status != "ready":
+            disclaimer = "Official alert feed is currently unavailable. Showing supplemental Skycast risks only."
+
+        has_official_flag = has_official if feed_status == "ready" else None
+
         # Standardize outer response schema for REST & WebSocket consumers
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         payload = {
@@ -51,15 +95,16 @@ class AlertDetectionService:
             "highestRiskColour": result.get("highestRiskColour", "green"),
             "highestRiskAction": result.get("highestRiskAction", "No Action"),
             "hasHazard": result.get("hasHazard", False),
-            "hasOfficialAlert": False,  # Transparent: our risks are Skycast-derived, not official IMD warnings
-            "officialAlerts": [],
+            "hasOfficialAlert": has_official_flag,
+            "officialAlerts": official_alerts_list,
+            "official_alerts_status": feed_status,
             "alerts": result.get("alerts", []),
             "upcomingRisks": result.get("upcomingRisks", []),
             "count": len(result.get("alerts", [])),
             "updatedAt": now_iso,
             "source": "skycast",
-            "official": False,
-            "disclaimer": "Skycast weather risks are derived from open numerical weather data based on published IMD warning criteria. They are NOT official IMD warnings."
+            "official": has_official,
+            "disclaimer": disclaimer
         }
 
         await cache.set(cache_key, payload, ttl=TTL_ALERTS)

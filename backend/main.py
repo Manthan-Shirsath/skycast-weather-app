@@ -89,8 +89,10 @@ def ensure_single_instance(host: str = "127.0.0.1", port: int = 8000) -> bool:
     Ensure exactly one active backend instance runs on port 8000.
     If a stale/orphaned Python backend process occupies port 8000 from a previous dev run,
     terminate it cleanly so the new dev session can bind without WinError 10048.
+    Also handles TIME_WAIT sockets from rapid restarts on Windows.
     """
     import socket
+    import time
     import psutil
 
     current_pid = os.getpid()
@@ -128,6 +130,7 @@ def ensure_single_instance(host: str = "127.0.0.1", port: int = 8000) -> bool:
                 except psutil.TimeoutExpired:
                     proc.kill()
                 logger.info("✓ Successfully freed port %d.", port)
+                time.sleep(1)
                 return True
             else:
                 logger.error("❌ Port %d is in use by non-python process '%s' (PID %d). Cannot auto-terminate.", port, proc_name, stale_pid)
@@ -135,6 +138,22 @@ def ensure_single_instance(host: str = "127.0.0.1", port: int = 8000) -> bool:
         except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
             logger.warning("Could not terminate process PID %d: %s", stale_pid, e)
 
+    # 3. No LISTEN process found — likely TIME_WAIT sockets from a recent crash.
+    #    Wait briefly for them to clear.
+    logger.info("⏳ No active LISTEN process on port %d. Waiting for TIME_WAIT sockets to clear...", port)
+    for attempt in range(6):
+        time.sleep(2)
+        try:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind((host, port))
+            probe.close()
+            logger.info("✓ Port %d is now available (attempt %d).", port, attempt + 1)
+            return True
+        except OSError:
+            pass
+
+    logger.warning("⚠️ Port %d still in TIME_WAIT after waiting. Will attempt bind anyway.", port)
     return True
 
 
@@ -145,3 +164,4 @@ if __name__ == "__main__":
     else:
         logger.error("❌ Aborting startup to prevent duplicate competing backend instances.")
         sys.exit(1)
+

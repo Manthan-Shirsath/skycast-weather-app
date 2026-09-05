@@ -21,6 +21,7 @@ from backend.app.core.config import (
 from backend.app.services.providers.base import BaseWeatherProvider
 from backend.app.services.providers.open_meteo import open_meteo_provider
 from backend.app.services.providers.rainviewer import fetch_radar_maps_raw
+from backend.app.services.providers.imd_cap import imd_cap_provider
 from backend.app.models.canonical_weather import (
     CanonicalLocationMeta,
     CanonicalCurrentWeather,
@@ -209,6 +210,33 @@ class WeatherDataHub:
                     return re_cached
 
             return await self.ingest_radar_metadata()
+
+    async def get_official_alerts(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Retrieve and cache official alerts from the IMD CAP feed.
+        Caches the feed for 5 minutes (300 seconds).
+        """
+        cache_key = "weather:official_alerts:imd"
+        if not force_refresh:
+            cached = await cache.get(cache_key)
+            if cached:
+                return cached
+
+        lock = await _get_lock_for_key(cache_key)
+        async with lock:
+            if not force_refresh:
+                re_cached = await cache.get(cache_key)
+                if re_cached:
+                    return re_cached
+            
+            try:
+                data = await imd_cap_provider.fetch_official_alerts()
+                # Cache for 5 minutes (300s)
+                await cache.set(cache_key, data, ttl=300)
+                return data
+            except Exception as exc:
+                logger.error("❌ [HUB ERROR] Official alerts ingestion failed: %s", exc)
+                return {"official_alerts_status": "unavailable", "reason": "fetch_error"}
 
     async def get_data_freshness(self, key: str) -> Dict[str, Any]:
         """Inspect freshness metadata for any dataset key."""

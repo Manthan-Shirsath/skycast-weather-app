@@ -135,6 +135,7 @@ class WeatherGPTAgent:
         default_city: Optional[str] = None,
         language: str = "en",
         user_role: str = "general_public",
+        agent_mode: str = "auto",
         ui_context: Optional[Dict[str, Any]] = None
     ) -> AgentResponse:
         """
@@ -194,6 +195,7 @@ class WeatherGPTAgent:
                 history_turns=history_turns,
                 language=language,
                 user_role=user_role,
+                agent_mode=agent_mode,
                 context=context,
                 ui_context=ui_context
             )
@@ -394,6 +396,7 @@ class WeatherGPTAgent:
         history_turns: list[dict],
         language: str = "en",
         user_role: str = "general_public",
+        agent_mode: str = "auto",
         context: Optional[ConversationContext] = None,
         ui_context: Optional[dict] = None
     ) -> AgentResponse:
@@ -430,9 +433,6 @@ class WeatherGPTAgent:
         def update_city(new_city: str):
             state["resolved_city"] = new_city
             
-        # 3. Import get_agents to initialize multi-agent orchestration
-        from backend.app.services.agent.multi_agent import get_agents
-        
         # Initialize UI Hook as a RunHooks
         from backend.app.services.agent.hooks import UICardCollectorHook
         ui_hook = UICardCollectorHook(executed_cards, update_city)
@@ -449,8 +449,26 @@ class WeatherGPTAgent:
         import agents
         agents.set_tracing_disabled(os.getenv("AGENTS_TRACING_ENABLED", "true").lower() != "true")
         
-        # Instantiate the triage agent that points to the specialists with dynamic temporal context
-        triage_agent = get_agents(model=self.model, dynamic_instruction=system_instruction)
+        # 5. Resolve Root Agent (Triage vs Explicit Mode)
+        if agent_mode == "auto":
+            from backend.app.services.agent.multi_agent import get_agents
+            root_agent = get_agents(model=self.model, dynamic_instruction=system_instruction)
+        else:
+            from backend.app.services.agent.registry import AgentRegistry
+            from agents import Agent
+            agent_def = AgentRegistry.get_agent(agent_mode)
+            if not agent_def:
+                # Fallback to auto
+                from backend.app.services.agent.multi_agent import get_agents
+                root_agent = get_agents(model=self.model, dynamic_instruction=system_instruction)
+            else:
+                agent_tools = ToolExecutor.get_openai_tools(agent_def.allowed_tools)
+                root_agent = Agent(
+                    name=agent_def.name,
+                    instructions=f"{agent_def.system_prompt}\n\n{system_instruction}",
+                    tools=agent_tools,
+                    model=self.model
+                )
         
         from agents.exceptions import (
             InputGuardrailTripwireTriggered,
@@ -463,7 +481,7 @@ class WeatherGPTAgent:
         try:
             logger.info("📡 [%s] Running OpenAI Multi-Agent Architecture (model='%s')", self.provider.upper(), self.model)
             # Pass the hook to Runner.run so it applies to all agents in the run
-            res = await Runner.run(triage_agent, input=messages, max_turns=self.max_tool_calls, hooks=ui_hook)
+            res = await Runner.run(root_agent, input=messages, max_turns=self.max_tool_calls, hooks=ui_hook)
             reply_text = res.final_output or "I have retrieved the centralized weather data for your request."
             assistant_text = self._clean_reply_text(reply_text)
             

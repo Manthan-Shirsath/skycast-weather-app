@@ -104,8 +104,16 @@ class AgricultureService:
         next_48h_rain_prob = max([d.get("rainChance", 0) for d in daily[:2]] or [rain_chance])
         expected_rain_mm = sum([d.get("precipitationSum", 0.0) for d in daily[:2]] or [precipitation_mm])
 
-        crop_profile = CROP_THRESHOLDS.get(crop_clean.lower(), CROP_THRESHOLDS["cotton"])
-
+        crop_key = crop_clean.lower()
+        if crop_key not in CROP_THRESHOLDS:
+            supported = ", ".join(CROP_THRESHOLDS.keys()).title()
+            return {
+                "status": "unsupported_crop",
+                "message": f"Specific agricultural models for '{crop_clean}' are not currently supported. Supported crops are: {supported}.",
+                "location": weather.get("city", clean_city)
+            }
+            
+        crop_profile = CROP_THRESHOLDS[crop_key]
         # 2. Evaluate Spraying Suitability
         spray_issues = []
         is_spray_favorable = True

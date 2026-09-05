@@ -15,6 +15,8 @@ from backend.app.models.chat import UserRole
 router = APIRouter(prefix="/api", tags=["Chat"])
 
 
+from backend.app.services.agent.registry import AgentMode
+
 class ChatRequest(BaseModel):
     message: str
     city: Optional[str] = "Pune"
@@ -22,6 +24,7 @@ class ChatRequest(BaseModel):
     history: Optional[List[Dict[str, Any]]] = []
     language: Optional[str] = "en"
     user_role: Optional[str] = UserRole.GENERAL_PUBLIC.value  # New: role-adaptive responses
+    agent_mode: Optional[AgentMode] = AgentMode.AUTO
     context: Optional[Dict[str, Any]] = None
 
 
@@ -54,6 +57,7 @@ async def chat_weather(req: ChatRequest = Body(...)):
             default_city=req.city or "Pune",
             language=req.language or "en",
             user_role=req.user_role or UserRole.GENERAL_PUBLIC.value,
+            agent_mode=req.agent_mode.value if req.agent_mode else "auto",
             ui_context=req.context
         )
 

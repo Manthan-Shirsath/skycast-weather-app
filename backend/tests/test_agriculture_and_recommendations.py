@@ -18,6 +18,24 @@ async def test_agriculture_service_advisory():
 
 
 @pytest.mark.anyio
+async def test_agriculture_service_unsupported_crop():
+    res = await AgricultureService.get_advisory(city_name="Pune", crop="Dragonfruit", growth_stage="Flowering")
+    assert res["status"] == "unsupported_crop"
+    assert "not currently supported" in res["message"]
+
+
+@pytest.mark.anyio
+async def test_agriculture_service_case_insensitive_crop():
+    res1 = await AgricultureService.get_advisory(city_name="Pune", crop="WHEAT", growth_stage="Flowering")
+    assert res1["status"] == "ready"
+    assert res1["crop"] == "Wheat"
+    
+    res2 = await AgricultureService.get_advisory(city_name="Pune", crop="sUgArCaNe", growth_stage="Flowering")
+    assert res2["status"] == "ready"
+    assert res2["crop"] == "Sugarcane"
+
+
+@pytest.mark.anyio
 async def test_recommendations_service():
     res = await RecommendationService.get_recommendations(city_name="Pune", activity="all")
     assert res["status"] == "ready"
@@ -35,3 +53,9 @@ async def test_agent_tool_executor_agriculture_and_recommendations():
     rec_res = await ToolExecutor.execute("get_weather_recommendations", {"location": "Pune", "activity": "umbrella"})
     assert rec_res.success is True
     assert rec_res.data["status"] == "ready"
+
+@pytest.mark.anyio
+async def test_agent_tool_executor_unsupported_crop():
+    agri_res = await ToolExecutor.execute("get_agriculture_advice", {"location": "Pune", "crop": "MagicBeans", "growth_stage": "Flowering"})
+    assert agri_res.success is True
+    assert agri_res.data["status"] == "unsupported_crop"

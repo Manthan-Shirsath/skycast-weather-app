@@ -25,7 +25,8 @@ from backend.app.services.agent.schemas import (
     LocationComparisonArgs,
     DateComparisonArgs,
     AlertExplanationArgs,
-    AnalyzeRainArgs
+    AnalyzeRainArgs,
+    ClimateResearchArgs
 )
 from backend.app.services.agent.tools import (
     search_location_tool,
@@ -43,7 +44,8 @@ from backend.app.services.agent.tools import (
     compare_locations_tool,
     compare_dates_tool,
     show_weather_alert_tool,
-    analyze_rain_tool
+    analyze_rain_tool,
+    get_climate_summary_tool
 )
 
 logger = logging.getLogger("skycast.agent.executor")
@@ -64,7 +66,8 @@ TOOL_REGISTRY: Dict[str, Tuple[Type[BaseModel], Any]] = {
     "compare_locations": (LocationComparisonArgs, compare_locations_tool),
     "compare_dates": (DateComparisonArgs, compare_dates_tool),
     "show_weather_alert": (AlertExplanationArgs, show_weather_alert_tool),
-    "analyze_rain": (AnalyzeRainArgs, analyze_rain_tool)
+    "analyze_rain": (AnalyzeRainArgs, analyze_rain_tool),
+    "get_climate_summary": (ClimateResearchArgs, get_climate_summary_tool),
 }
 
 DEFAULT_TOOL_TIMEOUT_SECONDS = 10.0

@@ -28,7 +28,8 @@ from backend.app.services.agent.schemas import (
     LocationComparisonArgs,
     DateComparisonArgs,
     AlertExplanationArgs,
-    AnalyzeRainArgs
+    AnalyzeRainArgs,
+    ClimateResearchArgs
 )
 
 logger = logging.getLogger("skycast.agent.tools")
@@ -620,12 +621,16 @@ async def get_data_freshness_tool(args: FreshnessArgs) -> Dict[str, Any]:
 # ==============================================================================
 
 async def get_agriculture_advice_tool(args: AgricultureArgs) -> Dict[str, Any]:
-    """Provides structured farming, spraying, irrigation, and crop weather risk advisory."""
+    """Provides deterministic agricultural advisories (spraying, irrigation, crop stress) based on actual weather data."""
     from backend.app.services.agriculture_service import AgricultureService
+    loc_clean = args.location.strip()
+    if not loc_clean:
+        return {"error": "Location is required"}
+    
     return await AgricultureService.get_advisory(
-        city_name=args.location,
-        crop=args.crop or "Cotton",
-        growth_stage=args.growth_stage or "Flowering"
+        city_name=loc_clean,
+        crop=args.crop,
+        growth_stage=args.growth_stage
     )
 
 
@@ -706,3 +711,47 @@ async def show_weather_alert_tool(args: AlertExplanationArgs) -> Dict[str, Any]:
         return args.dict()
     return args
 
+
+# ==============================================================================
+# Tool 16: get_climate_summary (Research Agent)
+# ==============================================================================
+
+async def get_climate_summary_tool(args: ClimateResearchArgs) -> Dict[str, Any]:
+    """Fetches REAL historical weather statistics for a location from the Open-Meteo Archive API (ERA5 reanalysis). Returns observed min, max, mean temperature, total precipitation, rainy days, wind max, and optionally compares to a prior period. Do NOT use for current or forecast weather. Data has a ~5-day lag. Only use computed values from this tool — never invent historical numbers."""
+    from backend.app.services.climate_service import ClimateService
+    import datetime
+
+    loc = args.location.strip()
+    if not loc:
+        return {"error": "Location is required"}
+
+    # Parse start/end dates
+    today = datetime.date.today()
+    try:
+        end_date = datetime.date.fromisoformat(args.end_date) if args.end_date else today - datetime.timedelta(days=6)
+    except ValueError:
+        end_date = today - datetime.timedelta(days=6)
+    try:
+        start_date = datetime.date.fromisoformat(args.start_date) if args.start_date else end_date - datetime.timedelta(days=29)
+    except ValueError:
+        start_date = end_date - datetime.timedelta(days=29)
+
+    # Parse optional compare period (format: "YYYY-MM-DD/YYYY-MM-DD")
+    compare_start = compare_end = None
+    if args.compare_period:
+        parts = args.compare_period.split("/")
+        if len(parts) == 2:
+            try:
+                compare_start = datetime.date.fromisoformat(parts[0].strip())
+                compare_end = datetime.date.fromisoformat(parts[1].strip())
+            except ValueError:
+                pass
+
+    return await ClimateService.get_historical_summary(
+        city=loc,
+        start_date=start_date,
+        end_date=end_date,
+        metric=args.metric,
+        compare_start=compare_start,
+        compare_end=compare_end,
+    )

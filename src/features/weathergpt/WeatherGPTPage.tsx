@@ -24,6 +24,18 @@ type ChatMessage = {
   isError?: boolean;
 };
 
+const AGENT_MODES = [
+  { id: 'auto', label: 'Auto (Triage)' },
+  { id: 'general', label: 'General Weather' },
+  { id: 'agriculture', label: 'Agriculture' },
+  { id: 'disaster', label: 'Disaster Risk' },
+  { id: 'aviation', label: 'Aviation' },
+  { id: 'marine', label: 'Marine' },
+  { id: 'research', label: 'Research' },
+  { id: 'urban', label: 'Urban' }
+];
+
+
 // --- Component ---
 export default function WeatherGPTPage() {
   const [searchParams] = useSearchParams();
@@ -33,6 +45,7 @@ export default function WeatherGPTPage() {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [agentMode, setAgentMode] = useState<string>('auto');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -83,6 +96,7 @@ export default function WeatherGPTPage() {
           message: userText,
           city: defaultCity,
           session_id: sessionId,
+          agent_mode: agentMode,
           context: {
              page: '/weathergpt',
              active_city: defaultCity
@@ -257,7 +271,18 @@ export default function WeatherGPTPage() {
              AI-powered weather intelligence
            </p>
          </div>
-         <Badge variant="ai" className="shadow-sm">v2.0 Active</Badge>
+         <div className="flex items-center gap-3">
+           <select 
+             value={agentMode} 
+             onChange={(e) => setAgentMode(e.target.value)}
+             className="text-sm bg-sky-surface-elevated border border-sky-border rounded-md px-2 py-1 text-sky-text-primary focus:outline-none focus:ring-1 focus:ring-sky-ai"
+           >
+             {AGENT_MODES.map(mode => (
+               <option key={mode.id} value={mode.id}>{mode.label}</option>
+             ))}
+           </select>
+           <Badge variant="ai" className="shadow-sm hidden md:inline-flex">v2.0 Active</Badge>
+         </div>
       </div>
 
       {/* Chat Area */}

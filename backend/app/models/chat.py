@@ -21,6 +21,7 @@ from sqlalchemy.orm import relationship
 from backend.app.models.weather_snapshot import Base
 
 
+
 class UserRole(str, Enum):
     """User persona/role for role-adaptive response formatting."""
     GENERAL_PUBLIC = "general_public"
