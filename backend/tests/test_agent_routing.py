@@ -72,8 +72,8 @@ async def test_agent_routing_coming_soon_limitations(agent):
         av_def = AgentRegistry.get_agent(AgentMode.AVIATION)
         assert len(root_agent.tools) == len(av_def.allowed_tools)
         
-        # System prompt should contain the explicit limitation
-        assert "Aviation weather integrations (METAR/TAF) are currently in development" in root_agent.instructions
+        # System prompt should contain METAR/TAF rules
+        assert "METAR" in root_agent.instructions
 
 @pytest.mark.asyncio
 async def test_agent_routing_disaster_mode(agent):

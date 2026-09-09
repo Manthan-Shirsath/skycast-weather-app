@@ -11,8 +11,9 @@ import logging
 
 
 from backend.app.services.weather_hub import weather_hub
-from backend.app.services.alert_service import alert_service
 from backend.app.services.history_service import HistoryService
+from backend.app.services.alert_service import alert_service
+from backend.app.services.agent.analytics_evaluator import AnalyticsEvaluator
 from backend.app.services.agent.schemas import (
     LocationSearchArgs,
     CurrentWeatherArgs,
@@ -29,7 +30,10 @@ from backend.app.services.agent.schemas import (
     DateComparisonArgs,
     AlertExplanationArgs,
     AnalyzeRainArgs,
-    ClimateResearchArgs
+    ClimateResearchArgs,
+    AviationArgs,
+    MarineArgs,
+    ModelComparisonArgs
 )
 
 logger = logging.getLogger("skycast.agent.tools")
@@ -407,10 +411,13 @@ async def get_forecast_tool(args: ForecastArgs) -> Dict[str, Any]:
 
     target_daily_rain = target_daily.get("daily_precipitation_probability", target_daily.get("rainChance", target_daily.get("rain_probability_pct", 0))) if target_daily else 0
 
+    analytics = AnalyticsEvaluator.calculate_trends(hourly_summary)
+
     return {
         "location": data.get("city", loc_clean),
         "target_date": target_date_iso,
         "target_period": target_period,
+        "analytics": analytics,
         "day_forecast": {
             "day": target_daily.get("day") if target_daily else "Day",
             "date": target_daily.get("date") if target_daily else target_date_iso,
@@ -755,3 +762,76 @@ async def get_climate_summary_tool(args: ClimateResearchArgs) -> Dict[str, Any]:
         compare_start=compare_start,
         compare_end=compare_end,
     )
+
+
+# ==============================================================================
+# Tool 17: get_aviation_reports (Aviation Agent)
+# ==============================================================================
+
+async def get_aviation_reports_tool(args: AviationArgs) -> Dict[str, Any]:
+    """Fetches live METAR and TAF aviation weather reports for the nearest airport using the NOAA AWC API."""
+    from backend.app.services.aviation_service import AviationService
+    from backend.app.services.weather_hub import weather_hub
+    
+    loc = args.location.strip()
+    if not loc:
+        return {"error": "Location is required"}
+
+    # Geocode if lat/lon not provided
+    lat, lon = args.lat, args.lon
+    if lat is None or lon is None:
+        geo = await weather_hub.provider.geocode_city(loc)
+        if not geo:
+            return {"error": f"Could not resolve location '{loc}'"}
+        lat, lon = geo["latitude"], geo["longitude"]
+        
+    return await AviationService.get_aviation_reports(lat, lon)
+
+
+# ==============================================================================
+# Tool 18: get_marine_forecast (Marine Agent)
+# ==============================================================================
+
+async def get_marine_forecast_tool(args: MarineArgs) -> Dict[str, Any]:
+    """Fetches marine forecast data including wave height, wave period, wave direction, and ocean currents using Open-Meteo Marine API."""
+    from backend.app.services.marine_service import MarineService
+    
+    loc = args.location.strip()
+    if not loc:
+        return {"error": "Location is required"}
+
+    # Geocode if lat/lon not provided
+    lat, lon = args.lat, args.lon
+    if lat is None or lon is None:
+        geo = await weather_hub.provider.geocode_city(loc)
+        if not geo:
+            return {"error": f"Could not resolve location '{loc}'"}
+        lat, lon = geo["latitude"], geo["longitude"]
+        
+    return await MarineService.get_marine_forecast(lat, lon)
+
+
+# ==============================================================================
+# Tool 19: compare_models (Multi-Model Forecast Intelligence)
+# ==============================================================================
+
+async def compare_models_tool(args: ModelComparisonArgs) -> Dict[str, Any]:
+    """
+    Compares live numerical weather predictions from multiple operational models
+    (ECMWF IFS, NOAA GFS, DWD ICON, ECMWF AIFS, Google WeatherNext 2).
+    Returns real model forecasts, metrics consensus, divergence spread, and agreement classification.
+    """
+    from backend.app.services.agent.context import normalize_target_date
+
+    loc_clean = args.location.strip()
+    if not loc_clean:
+        return {"error": "Location is required"}
+
+    target_date_iso = normalize_target_date(args.date)
+    return await weather_hub.compare_models(
+        location=loc_clean,
+        models=args.models,
+        target_date_iso=target_date_iso
+    )
+
+

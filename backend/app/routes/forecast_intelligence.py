@@ -3,40 +3,64 @@ from typing import List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
+from sqlalchemy import func
 from backend.app.core.database import get_db_session
 from backend.app.models.forecast import ForecastRun
 from backend.app.core.model_registry import MODEL_REGISTRY
 import datetime
+import logging
+
+logger = logging.getLogger("skycast.forecast_intelligence")
 
 router = APIRouter(
     prefix="/api/forecast-intelligence",
     tags=["Forecast Intelligence"]
 )
 
-@router.get("/{location}")
-async def get_forecast_intelligence(location: str, db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
-    """
-    Retrieve the latest Multi-Model Forecast Data for a specific location.
-    """
-    response_models = []
-    
-    from backend.app.services.forecast_analytics import ForecastAnalytics
-    
-    analytics_data = {}
-    valid_runs = []
-    
+async def _fetch_runs_for_location(location: str, db: AsyncSession) -> Dict[str, ForecastRun]:
+    runs = {}
+    loc_clean = location.strip().lower()
     for model_id, meta in MODEL_REGISTRY.items():
         if meta.get("availability") != "operational":
             continue
             
         stmt = select(ForecastRun).where(
             ForecastRun.model_id == model_id,
-            ForecastRun.location_name == location,
+            func.lower(ForecastRun.location_name) == loc_clean,
             ForecastRun.status == "success"
         ).order_by(ForecastRun.run_time.desc()).options(selectinload(ForecastRun.values)).limit(1)
         
         result = await db.execute(stmt)
         run = result.scalar_one_or_none()
+        if run:
+            runs[model_id] = run
+    return runs
+
+@router.get("/{location}")
+async def get_forecast_intelligence(location: str, db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+    """
+    Retrieve the latest Multi-Model Forecast Data for a specific location.
+    If no data exists in PostgreSQL, automatically triggers on-demand ingestion.
+    """
+    from backend.app.services.forecast_analytics import ForecastAnalytics
+    
+    runs_map = await _fetch_runs_for_location(location, db)
+    
+    # On-demand ingestion fallback if database is empty for this location
+    if not runs_map:
+        logger.info("ℹ️ No multi-model forecast data in DB for '%s'. Ingesting on-demand...", location)
+        from backend.app.services.forecast_ingestion import forecast_ingestion_service
+        await forecast_ingestion_service.ingest_location(location)
+        runs_map = await _fetch_runs_for_location(location, db)
+    
+    response_models = []
+    valid_runs = []
+    
+    for model_id, meta in MODEL_REGISTRY.items():
+        if meta.get("availability") != "operational":
+            continue
+            
+        run = runs_map.get(model_id)
         
         if not run:
             response_models.append({
@@ -84,6 +108,7 @@ async def get_forecast_intelligence(location: str, db: AsyncSession = Depends(ge
         })
 
     # Generate deterministic analytics
+    analytics_data = {}
     if valid_runs:
         analytics_data = ForecastAnalytics.analyze(valid_runs)
 
@@ -103,23 +128,13 @@ async def get_forecast_ai_analysis(location: str, db: AsyncSession = Depends(get
     from backend.app.services.forecast_analytics import ForecastAnalytics
     from backend.app.services.forecast_ai_service import forecast_ai_service
     
-    valid_runs = []
-    
-    for model_id, meta in MODEL_REGISTRY.items():
-        if meta.get("availability") != "operational":
-            continue
+    runs_map = await _fetch_runs_for_location(location, db)
+    if not runs_map:
+        from backend.app.services.forecast_ingestion import forecast_ingestion_service
+        await forecast_ingestion_service.ingest_location(location)
+        runs_map = await _fetch_runs_for_location(location, db)
             
-        stmt = select(ForecastRun).where(
-            ForecastRun.model_id == model_id,
-            ForecastRun.location_name == location,
-            ForecastRun.status == "success"
-        ).order_by(ForecastRun.run_time.desc()).options(selectinload(ForecastRun.values)).limit(1)
-        
-        result = await db.execute(stmt)
-        run = result.scalar_one_or_none()
-        if run:
-            valid_runs.append(run)
-            
+    valid_runs = list(runs_map.values())
     if not valid_runs:
         return {"analysis": "Insufficient data for analysis."}
         

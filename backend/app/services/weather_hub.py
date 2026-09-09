@@ -686,6 +686,209 @@ class WeatherDataHub:
             hourly_series=full_hourly_series
         )
 
+    async def compare_models(
+        self,
+        location: str,
+        models: Optional[List[str]] = None,
+        target_date_iso: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Retrieves and compares multi-model NWP forecast data across operational models.
+        """
+        from backend.app.services.providers.forecast_providers import (
+            EcmwfIfsProvider,
+            NoaaGfsProvider,
+            DwdIconProvider,
+            EcmwfAifsProvider,
+            WeatherNext2Provider
+        )
+
+        loc_clean = location.strip()
+        if not loc_clean:
+            return {"error": "Location is required"}
+
+        geo = await self.provider.geocode_city(loc_clean)
+        if not geo:
+            return {"error": f"Could not resolve location coordinates for '{loc_clean}'"}
+        lat, lon = geo["latitude"], geo["longitude"]
+        resolved_name = geo.get("name", loc_clean)
+
+        if not target_date_iso:
+            target_date_iso = datetime.date.today().isoformat()
+
+        ALL_PROVIDERS = {
+            "ecmwf_ifs": EcmwfIfsProvider(),
+            "ecmwf": EcmwfIfsProvider(),
+            "noaa_gfs": NoaaGfsProvider(),
+            "gfs": NoaaGfsProvider(),
+            "dwd_icon": DwdIconProvider(),
+            "icon": DwdIconProvider(),
+            "ecmwf_aifs": EcmwfAifsProvider(),
+            "aifs": EcmwfAifsProvider(),
+            "google_weathernext2": WeatherNext2Provider(),
+            "weathernext": WeatherNext2Provider()
+        }
+
+        selected_providers = []
+        if models and len(models) > 0:
+            seen = set()
+            for m in models:
+                m_key = m.strip().lower().replace(" ", "_").replace("-", "_")
+                provider = ALL_PROVIDERS.get(m_key)
+                if not provider:
+                    for k, p in ALL_PROVIDERS.items():
+                        if k in m_key or m_key in k:
+                            provider = p
+                            break
+                if provider and provider.model_id not in seen:
+                    seen.add(provider.model_id)
+                    selected_providers.append(provider)
+
+        if not selected_providers:
+            selected_providers = [EcmwfIfsProvider(), NoaaGfsProvider()]
+
+        async def _fetch_and_normalize(provider):
+            try:
+                raw = await provider.fetch_forecast(resolved_name, lat, lon)
+                normalized = provider.normalize(raw, resolved_name)
+                return provider.model_id, provider.model_name, normalized, None
+            except Exception as exc:
+                logger.warning("Failed to fetch forecast from %s: %s", provider.model_name, exc)
+                return provider.model_id, provider.model_name, [], str(exc)
+
+        results = await asyncio.gather(*[_fetch_and_normalize(p) for p in selected_providers])
+
+        models_data = []
+        temps_high = []
+        temps_low = []
+        precips_total = []
+        winds_max = []
+
+        for model_id, model_name, values, err in results:
+            if err or not values:
+                models_data.append({
+                    "model_id": model_id,
+                    "model_name": model_name,
+                    "status": "unavailable",
+                    "error": err or "No forecast data returned"
+                })
+                continue
+
+            day_values = [
+                v for v in values
+                if (
+                    getattr(v["valid_time"], "isoformat", lambda: "")().startswith(target_date_iso)
+                    or (hasattr(v["valid_time"], "strftime") and v["valid_time"].strftime("%Y-%m-%d") == target_date_iso)
+                )
+            ]
+
+            if not day_values:
+                day_values = values[:24]
+
+            t_vals = [v["value"] for v in day_values if v["variable"] == "temperature" and v.get("representation", "deterministic") in ("deterministic", "ensemble_mean")]
+            p_vals = [v["value"] for v in day_values if v["variable"] == "precipitation" and v.get("representation", "deterministic") in ("deterministic", "ensemble_mean")]
+            w_vals = [v["value"] for v in day_values if v["variable"] == "wind_speed" and v.get("representation", "deterministic") in ("deterministic", "ensemble_mean")]
+
+            high_c = round(max(t_vals), 1) if t_vals else None
+            low_c = round(min(t_vals), 1) if t_vals else None
+            avg_c = round(sum(t_vals) / len(t_vals), 1) if t_vals else None
+            total_p_mm = round(sum(p_vals), 1) if p_vals else 0.0
+            max_p_hourly = round(max(p_vals), 1) if p_vals else 0.0
+            max_w_kmh = round(max(w_vals), 1) if w_vals else None
+
+            if high_c is not None:
+                temps_high.append(high_c)
+            if low_c is not None:
+                temps_low.append(low_c)
+            if total_p_mm is not None:
+                precips_total.append(total_p_mm)
+            if max_w_kmh is not None:
+                winds_max.append(max_w_kmh)
+
+            time_samples = []
+            for v in day_values:
+                if v["variable"] == "temperature" and v.get("representation", "deterministic") in ("deterministic", "ensemble_mean"):
+                    vt = v["valid_time"]
+                    hr = vt.hour if hasattr(vt, "hour") else 0
+                    if hr in [6, 12, 18, 21]:
+                        time_samples.append({
+                            "time": f"{hr:02d}:00 UTC",
+                            "temperature_c": round(v["value"], 1)
+                        })
+
+            models_data.append({
+                "model_id": model_id,
+                "model_name": model_name,
+                "status": "available",
+                "temperature_high_c": high_c,
+                "temperature_low_c": low_c,
+                "temperature_avg_c": avg_c,
+                "total_precipitation_mm": total_p_mm,
+                "max_hourly_precipitation_mm": max_p_hourly,
+                "rain_expected": total_p_mm > 0.1,
+                "max_wind_speed_kmh": max_w_kmh,
+                "samples": time_samples
+            })
+
+        available_models = [m for m in models_data if m["status"] == "available"]
+        if len(available_models) < 2:
+            return {
+                "location": resolved_name,
+                "target_date": target_date_iso,
+                "models_count": len(available_models),
+                "models": models_data,
+                "agreement_level": "insufficient_data",
+                "divergence_summary": "Insufficient operational models returned data for a side-by-side comparison.",
+                "source": "open_meteo"
+            }
+
+        delta_temp_high = round(max(temps_high) - min(temps_high), 1) if len(temps_high) >= 2 else 0.0
+        delta_precip = round(max(precips_total) - min(precips_total), 1) if len(precips_total) >= 2 else 0.0
+
+        consensus_high = round(sum(temps_high) / len(temps_high), 1) if temps_high else None
+        consensus_low = round(sum(temps_low) / len(temps_low), 1) if temps_low else None
+        consensus_precip = round(sum(precips_total) / len(precips_total), 1) if precips_total else 0.0
+
+        if delta_temp_high <= 1.5 and delta_precip <= 2.0:
+            agreement_level = "High Agreement"
+            summary_text = (
+                f"Strong consensus between models for {resolved_name} on {target_date_iso}. "
+                f"Forecasted high temperatures agree within {delta_temp_high}°C "
+                f"(Consensus High: {consensus_high}°C, Low: {consensus_low}°C). "
+                f"Precipitation expectations are consistent (~{consensus_precip} mm)."
+            )
+        elif delta_temp_high <= 3.0 and delta_precip <= 6.0:
+            agreement_level = "Moderate Agreement"
+            summary_text = (
+                f"Moderate agreement with slight divergence. "
+                f"High temperature spread is {delta_temp_high}°C (Consensus High: {consensus_high}°C). "
+                f"Precipitation divergence is {delta_precip} mm."
+            )
+        else:
+            agreement_level = "Divergent"
+            summary_text = (
+                f"Significant divergence between forecast models. "
+                f"High temperature differs by {delta_temp_high}°C, and precipitation estimates differ by {delta_precip} mm."
+            )
+
+        return {
+            "location": resolved_name,
+            "target_date": target_date_iso,
+            "models_count": len(available_models),
+            "agreement_level": agreement_level,
+            "divergence_summary": summary_text,
+            "temperature_consensus": {
+                "consensus_high_c": consensus_high,
+                "consensus_low_c": consensus_low,
+                "spread_high_c": delta_temp_high
+            },
+            "precipitation_consensus": {
+                "consensus_total_mm": consensus_precip,
+                "spread_mm": delta_precip
+            },
+            "models": models_data,
+            "source": "open_meteo"
+        }
 
 
 # Singleton Instance of Central Weather Data Hub

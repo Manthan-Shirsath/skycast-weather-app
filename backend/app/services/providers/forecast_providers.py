@@ -56,7 +56,7 @@ class OpenMeteoEnsembleBase(ForecastProvider):
     _upstream_model_name: str = ""
     
     async def fetch_forecast(self, location_name: str, lat: float, lon: float) -> Dict[str, Any]:
-        url = "https://ensemble-api.open-meteo.com/v1/ensemble"
+        url = "https://api.open-meteo.com/v1/forecast"
         
         # Request temperature, precipitation, cloud cover, and wind speed
         params = {

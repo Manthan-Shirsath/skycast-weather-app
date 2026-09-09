@@ -66,10 +66,16 @@ SARVAM_MODEL = os.getenv("SARVAM_MODEL") or "sarvam-105b"
 def _resolve_provider_settings(provider: Optional[str] = None):
     """
     Resolve active provider, API key, base URL, model, and fallback key.
-    Defaults to Groq with openai/gpt-oss-120b, while keeping Sarvam fully configurable.
+    Defaults to Groq with openai/gpt-oss-120b, while keeping Gemini and Sarvam fully configurable.
     """
     p = (provider or LLM_PROVIDER or "groq").strip().lower()
-    if p == "sarvam":
+    if p in ["gemini", "google"]:
+        p = "gemini"
+        api_key = (os.getenv("GEMINI_API_KEY") or os.getenv("gemini_api_key") or "").strip()
+        fallback_key = (os.getenv("GEMINI_API_KEY_FALLBACK") or os.getenv("gemini_api_key_fallback") or "").strip()
+        base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
+        model = os.getenv("GEMINI_MODEL") or os.getenv("LLM_MODEL") or "gemini-3.5-flash-lite"
+    elif p == "sarvam":
         api_key = SARVAM_API_KEY
         fallback_key = SARVAM_API_KEY_FALLBACK
         base_url = SARVAM_BASE_URL
@@ -164,7 +170,8 @@ class WeatherGPTAgent:
             session_id=session_id,
             user_text=user_text,
             default_city=location_context or default_city,
-            language=language
+            language=language,
+            agent_mode=agent_mode
         )
 
         active_city = context.location or location_context or default_city or "Pune"
@@ -447,7 +454,7 @@ class WeatherGPTAgent:
         
         # Optional tracing depending on ENV
         import agents
-        agents.set_tracing_disabled(os.getenv("AGENTS_TRACING_ENABLED", "true").lower() != "true")
+        agents.set_tracing_disabled(os.getenv("AGENTS_TRACING_ENABLED", "false").lower() != "true")
         
         # 5. Resolve Root Agent (Triage vs Explicit Mode)
         if agent_mode == "auto":
@@ -489,6 +496,8 @@ class WeatherGPTAgent:
             lower_reply = assistant_text.lower()
             is_agri = any(c.type == "agriculture" for c in executed_cards) or any(w in lower_reply for w in ["spray", "pesticide", "crop", "irrigation"])
             is_severe = any(c.type == "weather_alert" for c in executed_cards) or any(w in lower_reply for w in ["cyclone", "flood", "severe", "emergency", "hurricane"])
+            is_aviation = agent_mode == "aviation" or any(w in lower_reply for w in ["metar", "taf", "crosswind", "flight planning", "ceiling", "takeoff"])
+            is_marine = agent_mode == "marine" or any(w in lower_reply for w in ["wave height", "swell", "tide", "small craft", "boating", "voyage"])
             
             if is_agri:
                 assistant_text += "\n\n⚠️ Advisory: Agricultural recommendations are based on standard meteorological data. Please consult local agronomists before applying chemicals."

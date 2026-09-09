@@ -62,6 +62,7 @@ class AgentRegistry:
                 "get_map_weather",
                 "get_data_freshness",
                 "compare_locations",
+                "compare_models",
                 "show_visual_explanation"
             ],
             required_data=["open_meteo_gfs"]
@@ -77,9 +78,10 @@ class AgentRegistry:
                 "1. Always use the `get_agriculture_advice` tool to fetch deterministic farming advice for a specific crop.\n"
                 "2. Base all your recommendations ONLY on the deterministic outputs returned by the tools (e.g. spray suitability score, irrigation status).\n"
                 "3. Address practical questions directly, such as 'Should I irrigate today?' or 'Is today suitable for spraying?' using the provided advisory.\n"
-                "4. If a user asks about a crop that is not explicitly supported by the data, clearly state that specific advice for that crop is not currently available, but offer general weather data instead.\n"
+                "4. If a user asks about a crop that is not explicitly supported by the data, ask them conversationally which crop they are growing instead of stating 'Specific advice cannot be provided'. (e.g. 'I can help with that 🌱. Which crop are you planning to sow?')\n"
                 "5. Never guess soil moisture, ET0, pest predictions, or crop disease risks unless provided by the `get_agriculture_advice` tool.\n"
-                "6. Keep deterministic calculations separate from your reasoning; you interpret the data but do not invent the baseline numbers."
+                "6. Keep deterministic calculations separate from your reasoning; you interpret the data but do not invent the baseline numbers.\n"
+                "7. Never artificially hyphenate or split words (e.g. do not write 'sow- ing', write 'sowing'). Ensure text formatting flows naturally without awkward word breaks."
             ),
             capabilities=["crop_stress", "spraying_conditions", "basic_irrigation"],
             allowed_tools=[
@@ -144,6 +146,7 @@ class AgentRegistry:
                 "get_climate_summary",
                 "get_weather_trends",
                 "get_historical_weather",
+                "compare_models",
             ],
             required_data=["open_meteo_archive_api"],
             limitations_message=None
@@ -151,42 +154,52 @@ class AgentRegistry:
         AgentMode.AVIATION: AgentDefinition(
             mode=AgentMode.AVIATION,
             name="Aviation Agent",
-            status=AgentStatus.COMING_SOON,
+            status=AgentStatus.FULLY_SUPPORTED,
             system_prompt=(
-                "You are a specialized aviation meteorology agent. "
-                "You handle queries about METAR, TAF, cloud ceilings, and aviation hazards.\n\n"
-                "CRITICAL LIMITATION:\n"
-                "Aviation weather integrations (METAR/TAF) are currently in development. You do NOT have access to aviation data yet.\n"
-                "Do NOT fabricate METAR, TAF, visibility, or cloud ceiling data. "
-                "Inform the user clearly that this feature is coming soon."
+                "You are a specialized aviation meteorology agent.\n"
+                "You handle queries about METAR, TAF, cloud ceilings, visibility, crosswind components, and aviation hazards.\n\n"
+                "GROUNDING RULES:\n"
+                "1. Always use the `get_aviation_reports` tool to fetch live METAR and TAF data for the nearest airport.\n"
+                "2. When answering flight-related queries, base your response explicitly on the METAR/TAF data retrieved.\n"
+                "3. NEVER fabricate METAR codes, TAF forecasts, precise runway visibility, or cloud ceiling measurements.\n"
+                "4. You can still provide general NWP weather context from other tools if aviation reports are unavailable."
             ),
-            capabilities=["metar", "taf", "cloud_ceiling", "crosswind"],
+            capabilities=["metar", "taf", "cloud_ceiling", "crosswind", "aviation_hazards"],
             allowed_tools=[
                 "search_location",
-                "get_current_weather"
+                "get_aviation_reports",
+                "get_current_weather",
+                "get_forecast",
+                "get_weather_risk",
+                "analyze_rain"
             ],
             required_data=["aviation_weather_api"],
-            limitations_message="Aviation weather features (METAR/TAF) are coming soon."
+            limitations_message=None
         ),
         AgentMode.MARINE: AgentDefinition(
             mode=AgentMode.MARINE,
             name="Marine Agent",
-            status=AgentStatus.COMING_SOON,
+            status=AgentStatus.FULLY_SUPPORTED,
             system_prompt=(
-                "You are a specialized marine weather agent. "
-                "You handle queries about wave heights, swell, sea temperatures, and coastal conditions.\n\n"
-                "CRITICAL LIMITATION:\n"
-                "Marine weather integrations are currently in development. You do NOT have access to marine data yet.\n"
-                "Do NOT fabricate wave heights, swell periods, or sea temperatures. "
-                "Inform the user clearly that this feature is coming soon."
+                "You are a specialized marine weather agent.\n"
+                "You handle queries about wave heights, swell, sea temperatures, ocean currents, and coastal conditions.\n\n"
+                "GROUNDING RULES:\n"
+                "1. Always use the `get_marine_forecast` tool to fetch marine data like wave height, wave period, and ocean currents.\n"
+                "2. Base your marine-related answers explicitly on the data retrieved from the marine tool.\n"
+                "3. NEVER fabricate wave heights, swell periods, sea temperatures, or tidal heights.\n"
+                "4. You can provide general coastal weather context (surface wind, rain) from the general forecast tools as well."
             ),
-            capabilities=["wave_height", "swell", "sea_temperature"],
+            capabilities=["wave_height", "swell", "sea_temperature", "tides", "small_craft_advisory"],
             allowed_tools=[
                 "search_location",
-                "get_current_weather"
+                "get_marine_forecast",
+                "get_current_weather",
+                "get_forecast",
+                "get_weather_risk",
+                "analyze_rain"
             ],
             required_data=["open_meteo_marine_api"],
-            limitations_message="Marine weather features (Waves/Swell) are coming soon."
+            limitations_message=None
         ),
         AgentMode.URBAN: AgentDefinition(
             mode=AgentMode.URBAN,

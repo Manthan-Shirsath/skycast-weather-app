@@ -72,6 +72,45 @@ class ForecastIngestionService:
         duration = (datetime.datetime.now(datetime.timezone.utc) - start_time).total_seconds()
         logger.info(f"✅ [ForecastIngestion] Completed in {duration:.1f}s. Success: {success_count}, Failed: {failure_count}")
 
+    async def ingest_location(self, loc_name: str, lat: float = None, lon: float = None) -> bool:
+        """
+        On-demand multi-model forecast ingestion for a single location.
+        """
+        loc_clean = loc_name.strip()
+        if lat is None or lon is None:
+            # 1. Match configured locations (case-insensitive)
+            match = next((loc for loc in INGESTION_LOCATIONS if loc["name"].lower() == loc_clean.lower()), None)
+            if match:
+                lat = match["lat"]
+                lon = match["lon"]
+                loc_clean = match["name"]
+            else:
+                # 2. Geocode city dynamically
+                from backend.app.services.providers.open_meteo import open_meteo_provider
+                try:
+                    geo = await open_meteo_provider.geocode_city(loc_clean)
+                    if geo and "lat" in geo and "lon" in geo:
+                        lat = geo["lat"]
+                        lon = geo["lon"]
+                        loc_clean = geo.get("name", loc_clean)
+                    else:
+                        logger.warning("⚠️ [ForecastIngestion] Geocoding failed for '%s'.", loc_name)
+                        return False
+                except Exception as exc:
+                    logger.warning("⚠️ [ForecastIngestion] Geocode error for '%s': %s", loc_name, exc)
+                    return False
+
+        loc_dict = {"name": loc_clean, "lat": lat, "lon": lon}
+        operational_providers = [
+            p for p in self.providers 
+            if MODEL_REGISTRY.get(p.model_id, {}).get("availability") == "operational"
+        ]
+        
+        logger.info("⚡ [ForecastIngestion] Running on-demand multi-model ingestion for %s (%.4f, %.4f)...", loc_clean, lat, lon)
+        tasks = [self._fetch_and_store(p, loc_dict) for p in operational_providers]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return any(r is True for r in results)
+
     async def _fetch_and_store(self, provider: ForecastProvider, loc: dict) -> bool:
         loc_name = loc["name"]
         model_id = provider.model_id
@@ -90,8 +129,6 @@ class ForecastIngestionService:
                 return False
                 
             # Use the valid_time of the first item as an approximation of the run_time if not provided explicitly by API
-            # Ideally upstream provides explicit run_time, but for OpenMeteo ensemble, it's roughly the first valid_time 
-            # for the current update cycle.
             # We truncate to nearest 6 hours for run_time stability.
             first_dt = normalized_data[0]["valid_time"]
             run_time = first_dt.replace(hour=(first_dt.hour // 6) * 6, minute=0, second=0, microsecond=0)
@@ -117,18 +154,23 @@ class ForecastIngestionService:
                 existing_run = result.scalar_one_or_none()
                 
                 if existing_run:
-                    logger.debug("⏭️ [ForecastIngestion] %s for %s at %s already exists. Skipping.", model_id, loc_name, run_time)
-                    return
-                
-                # 2. Create ForecastRun
-                run = ForecastRun(
-                    model_id=model_id,
-                    location_name=loc_name,
-                    run_time=run_time,
-                    status="success"
-                )
-                session.add(run)
-                await session.flush() # Get run.id
+                    if existing_run.status == "success":
+                        logger.debug("⏭️ [ForecastIngestion] %s for %s at %s already exists. Skipping.", model_id, loc_name, run_time)
+                        return
+                    else:
+                        existing_run.status = "success"
+                        existing_run.fetched_at = datetime.datetime.now(datetime.timezone.utc)
+                        run = existing_run
+                else:
+                    # 2. Create ForecastRun
+                    run = ForecastRun(
+                        model_id=model_id,
+                        location_name=loc_name,
+                        run_time=run_time,
+                        status="success"
+                    )
+                    session.add(run)
+                    await session.flush() # Get run.id
                 
                 # 3. Bulk insert ForecastValues
                 db_values = [
@@ -183,6 +225,9 @@ class ForecastIngestionService:
                 await session.rollback()
 
 
+forecast_ingestion_service = ForecastIngestionService()
+
+
 class ForecastIngestionWorker:
     """
     Autonomous background worker for Forecast Intelligence, decoupled from live collector.
@@ -190,7 +235,7 @@ class ForecastIngestionWorker:
     def __init__(self):
         self._is_running = False
         self._task = None
-        self.service = ForecastIngestionService()
+        self.service = forecast_ingestion_service
 
     def start(self):
         from backend.app.core.config import ENABLE_BACKGROUND_POLLING

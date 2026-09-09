@@ -27,7 +27,7 @@ export function LanguageSwitcher() {
     <select
       value={i18n.resolvedLanguage}
       onChange={changeLanguage}
-      className="bg-transparent border border-white/20 text-white text-sm rounded-md px-2 py-1 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 hover:bg-white/10 transition-colors"
+      className="bg-transparent border border-sky-border/50 text-white text-sm rounded-md px-2 py-1 outline-none focus:border-sky-primary focus:ring-1 focus:ring-sky-primary hover:bg-white/10 transition-colors"
       aria-label="Select Language"
     >
       {LANGUAGES.map((lang) => (

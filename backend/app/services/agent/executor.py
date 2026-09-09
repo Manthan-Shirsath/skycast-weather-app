@@ -26,7 +26,10 @@ from backend.app.services.agent.schemas import (
     DateComparisonArgs,
     AlertExplanationArgs,
     AnalyzeRainArgs,
-    ClimateResearchArgs
+    ClimateResearchArgs,
+    AviationArgs,
+    MarineArgs,
+    ModelComparisonArgs
 )
 from backend.app.services.agent.tools import (
     search_location_tool,
@@ -45,7 +48,10 @@ from backend.app.services.agent.tools import (
     compare_dates_tool,
     show_weather_alert_tool,
     analyze_rain_tool,
-    get_climate_summary_tool
+    get_climate_summary_tool,
+    get_aviation_reports_tool,
+    get_marine_forecast_tool,
+    compare_models_tool
 )
 
 logger = logging.getLogger("skycast.agent.executor")
@@ -68,9 +74,12 @@ TOOL_REGISTRY: Dict[str, Tuple[Type[BaseModel], Any]] = {
     "show_weather_alert": (AlertExplanationArgs, show_weather_alert_tool),
     "analyze_rain": (AnalyzeRainArgs, analyze_rain_tool),
     "get_climate_summary": (ClimateResearchArgs, get_climate_summary_tool),
+    "get_aviation_reports": (AviationArgs, get_aviation_reports_tool),
+    "get_marine_forecast": (MarineArgs, get_marine_forecast_tool),
+    "compare_models": (ModelComparisonArgs, compare_models_tool),
 }
 
-DEFAULT_TOOL_TIMEOUT_SECONDS = 10.0
+DEFAULT_TOOL_TIMEOUT_SECONDS = 15.0
 
 
 class ToolExecutor:
@@ -165,6 +174,7 @@ class ToolExecutor:
                 "show_visual_explanation": "visual_explanation",
                 "compare_locations": "location_comparison",
                 "compare_dates": "date_comparison",
+                "compare_models": "date_comparison",
                 "show_weather_alert": "weather_alert",
                 "analyze_rain": "rain_timeline"
             }

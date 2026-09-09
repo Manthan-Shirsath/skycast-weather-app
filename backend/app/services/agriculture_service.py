@@ -134,31 +134,31 @@ class AgricultureService:
             spraying_status = "OPTIMAL"
             spraying_score = 92
             spraying_window = "Early Morning (6:00 AM - 9:30 AM) or Late Afternoon (4:30 PM - 6:30 PM)"
-            spraying_summary = "Weather conditions are suitable for foliar spray with minimal drift and low wash-off risk."
+            spraying_summary = "Weather conditions appear suitable for foliar spray with minimal drift and low wash-off risk."
         elif len(spray_issues) == 1:
             spraying_status = "MODERATE"
             spraying_score = 60
             spraying_window = "Early Morning calm window only (6:00 AM - 8:00 AM)"
-            spraying_summary = f"Marginal conditions: {spray_issues[0]}"
+            spraying_summary = f"Marginal conditions: {spray_issues[0]}. Consider proceeding with caution."
         else:
             spraying_status = "UNFAVORABLE"
             spraying_score = 25
-            spraying_window = "Postpone spraying until weather stabilizes"
-            spraying_summary = f"Avoid spraying today: {'; '.join(spray_issues)}"
+            spraying_window = "Consider postponing spraying until weather stabilizes"
+            spraying_summary = f"Consider avoiding spraying today: {'; '.join(spray_issues)}"
 
         # 3. Evaluate Irrigation Guidance
         if expected_rain_mm >= 8.0 or next_48h_rain_prob >= 60:
             irrigation_status = "POSTPONE"
-            irrigation_guidance = f"Postpone scheduled irrigation. Significant rainfall (~{expected_rain_mm:.1f} mm) is projected within 48 hours."
+            irrigation_guidance = f"Consider delaying scheduled irrigation. Significant rainfall (~{expected_rain_mm:.1f} mm) is projected within 48 hours."
         elif expected_rain_mm >= 3.0 or next_48h_rain_prob >= 40:
             irrigation_status = "HOLD / MONITOR"
-            irrigation_guidance = f"Moderate rain chance ({next_48h_rain_prob}%). Hold irrigation and monitor soil moisture levels."
+            irrigation_guidance = f"Moderate rain chance ({next_48h_rain_prob}%). Consider holding irrigation and monitor local soil moisture levels."
         elif temp_c > 32 and humidity < 50:
             irrigation_status = "IRRIGATE (EVENING)"
-            irrigation_guidance = "High evaporative demand. Provide light irrigation during evening hours to avoid heat stress."
+            irrigation_guidance = "High evaporative demand. Consider providing light irrigation during evening hours to avoid heat stress if soil is dry."
         else:
             irrigation_status = "NORMAL CYCLE"
-            irrigation_guidance = "Maintain standard crop water scheduling based on current soil moisture."
+            irrigation_guidance = "Consider maintaining standard crop water scheduling based on current local soil moisture."
 
         # 4. Evaluate Disease & Pest Risk
         pest_risks = []

@@ -27,6 +27,11 @@ SARVAM_MODEL = os.getenv("SARVAM_MODEL") or "sarvam-105b"
 
 
 def _resolve_service_defaults():
+    if LLM_PROVIDER in ["gemini", "google"]:
+        gemini_key = (os.getenv("GEMINI_API_KEY") or os.getenv("gemini_api_key") or "").strip()
+        gemini_base = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
+        gemini_model = os.getenv("GEMINI_MODEL") or os.getenv("LLM_MODEL") or "gemini-3.5-flash-lite"
+        return "gemini", gemini_key, gemini_base, gemini_model
     if LLM_PROVIDER == "sarvam":
         return "sarvam", SARVAM_API_KEY, SARVAM_BASE_URL, SARVAM_MODEL
     return "groq", GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL

@@ -2,10 +2,9 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from './layout';
 
 // Lazy loading features
-import HomePage from '../features/home/HomePage';
+import DashboardPage from '../features/dashboard/DashboardPage';
 import WeatherGPTPage from '../features/weathergpt/WeatherGPTPage';
 import MapPage from '../features/map/MapPage';
-import ForecastPage from '../features/forecast/ForecastPage';
 import ClimatePage from '../features/climate/ClimatePage';
 import AlertsPage from '../features/alerts/AlertsPage';
 import AgriculturePage from '../features/agriculture/AgriculturePage';
@@ -19,7 +18,7 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <HomePage />,
+        element: <DashboardPage />,
       },
       {
         path: 'weathergpt',
@@ -27,7 +26,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'forecast',
-        element: <ForecastPage />,
+        element: <Navigate to="/" replace />,
       },
       {
         path: 'map',

@@ -29,6 +29,14 @@ class ForecastArgs(BaseModel):
     time_range: Optional[str] = Field(None, description="Optional time of day window ('morning', 'afternoon', 'evening', 'night')")
     time_span: Optional[List[int]] = Field(None, description="Exact hour span if requested (e.g. [9, 16])")
     activity: Optional[str] = Field(None, description="Optional outdoor activity to evaluate suitability for (e.g. 'cricket', 'hiking')")
+    model: Optional[str] = Field(None, description="Specific NWP model if requested: 'ecmwf'/'ecmwf_ifs', 'gfs'/'noaa_gfs', 'icon'/'dwd_icon', 'aifs'/'ecmwf_aifs', 'weathernext'/'google_weathernext2'")
+
+
+class ModelComparisonArgs(BaseModel):
+    location: str = Field(..., description="City or location name to compare weather model forecasts for (e.g. 'Pune', 'Mumbai')")
+    models: Optional[List[str]] = Field(None, description="List of NWP models to compare (e.g. ['ecmwf_ifs', 'noaa_gfs'], ['ECMWF', 'GFS']). Defaults to ECMWF IFS and NOAA GFS if not specified.")
+    date: Optional[str] = Field(None, description="Optional target date (e.g. 'today', 'tomorrow', '2026-09-09')")
+    variable: Optional[str] = Field(None, description="Optional specific variable focus: 'temperature', 'precipitation', 'wind', or None for complete multi-variable comparison")
 
 
 class AnalyzeRainArgs(BaseModel):
@@ -111,6 +119,16 @@ class AlertExplanationArgs(BaseModel):
     explanation: str = Field(..., description="AI-generated explanation of the alert and potential impacts")
     recommendations: List[str] = Field(..., description="AI-generated practical safety recommendations")
 
+class AviationArgs(BaseModel):
+    location: str = Field(..., description="City or location name to fetch aviation METAR/TAF reports for")
+    lat: Optional[float] = Field(None, description="Optional latitude")
+    lon: Optional[float] = Field(None, description="Optional longitude")
+
+class MarineArgs(BaseModel):
+    location: str = Field(..., description="City or coastal location name to fetch marine forecasts for")
+    lat: Optional[float] = Field(None, description="Optional latitude")
+    lon: Optional[float] = Field(None, description="Optional longitude")
+
 # ==============================================================================
 # Tool Execution Output Envelope
 # ==============================================================================
@@ -142,7 +160,10 @@ SUPPORTED_CARD_TYPES = {
     "location_comparison",
     "date_comparison",
     "weather_alert",
-    "rain_timeline"
+    "rain_timeline",
+    "weather_summary",
+    "forecast_timeline",
+    "decision"
 }
 
 class CardItem(BaseModel):

@@ -36,6 +36,7 @@ class ConversationContext(BaseModel):
     weather_intent: str = Field("current_weather", description="Intent: 'current_weather', 'forecast', 'activity_suitability', 'rain_check', 'alerts', 'comparison'")
     activity: Optional[str] = Field(None, description="Outdoor activity (e.g. 'cricket', 'football', 'hiking', 'running')")
     language: str = Field("en", description="Target response language: 'en', 'mr', 'hi', etc.")
+    agent_mode: str = Field("auto", description="The agent mode active during this context resolution")
     current_topic: Optional[str] = Field(None, description="High-level topic summary")
     last_updated: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
 
@@ -705,7 +706,8 @@ class ConversationContextTracker:
         user_text: str,
         default_city: Optional[str] = None,
         language: str = "en",
-        base_date: Optional[datetime.date] = None
+        base_date: Optional[datetime.date] = None,
+        agent_mode: str = "auto"
     ) -> ConversationContext:
         """
         Deterministically resolves conversational references in user_text against existing state.
@@ -773,11 +775,13 @@ class ConversationContextTracker:
             time_range = None
             time_span = None
 
+        mode_changed = prev and prev.agent_mode != agent_mode
+
         # 4. Resolve Activity
         new_act = extract_activity_reference(user_text)
         if new_act:
             activity = new_act
-        elif prev and prev.activity:
+        elif prev and prev.activity and not mode_changed:
             activity = prev.activity
         else:
             activity = None
@@ -799,6 +803,7 @@ class ConversationContextTracker:
             activity=activity,
             weather_intent=intent,
             language=language,
+            agent_mode=agent_mode,
             current_topic=f"{intent}_{active_location or 'unknown'}",
             last_updated=datetime.datetime.now(datetime.timezone.utc).isoformat()
         )

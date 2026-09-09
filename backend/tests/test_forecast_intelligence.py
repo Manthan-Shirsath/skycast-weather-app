@@ -84,3 +84,43 @@ def test_ingestion_partial_failure():
                 
                 # Run cycle (should not raise)
                 asyncio.run(service.run_ingestion_cycle())
+
+
+@pytest.mark.asyncio
+async def test_compare_models_tool():
+    """Test that compare_models_tool aggregates multiple providers into agreement/divergence analytics."""
+    from backend.app.services.agent.schemas import ModelComparisonArgs
+    from backend.app.services.agent.tools import compare_models_tool
+
+    # Mock geocoding
+    with patch("backend.app.services.weather_hub.weather_hub.provider.geocode_city", return_value={"name": "Pune", "latitude": 18.52, "longitude": 73.85}):
+        # Mock provider fetch
+        async def mock_fetch(self, loc_name, lat, lon):
+            if self.model_id == "ecmwf_ifs":
+                return {
+                    "hourly": {
+                        "time": ["2026-09-09T00:00", "2026-09-09T12:00"],
+                        "temperature_2m_ecmwf_ifs025": [22.0, 29.0],
+                        "precipitation_ecmwf_ifs025": [0.0, 1.5],
+                        "wind_speed_10m_ecmwf_ifs025": [10.0, 15.0]
+                    }
+                }
+            else:
+                return {
+                    "hourly": {
+                        "time": ["2026-09-09T00:00", "2026-09-09T12:00"],
+                        "temperature_2m_gfs_seamless": [21.0, 28.5],
+                        "precipitation_gfs_seamless": [0.0, 0.5],
+                        "wind_speed_10m_gfs_seamless": [12.0, 18.0]
+                    }
+                }
+
+        with patch("backend.app.services.providers.forecast_providers.OpenMeteoEnsembleBase.fetch_forecast", new=mock_fetch):
+            res = await compare_models_tool(ModelComparisonArgs(location="Pune", models=["ecmwf_ifs", "noaa_gfs"], date="2026-09-09"))
+            assert res["location"] == "Pune"
+            assert res["models_count"] == 2
+            assert res["agreement_level"] == "High Agreement"
+            assert res["temperature_consensus"]["consensus_high_c"] == 28.8
+            assert res["temperature_consensus"]["spread_high_c"] == 0.5
+            assert len(res["models"]) == 2
+

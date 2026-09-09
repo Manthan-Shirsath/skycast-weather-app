@@ -14,18 +14,16 @@ function NavLinks({ isMobile, onNavigate }: { isMobile?: boolean, onNavigate?: (
   const { t } = useTranslation();
   const location = useLocation();
   const NAV_ITEMS = [
-    { name: t('nav.home', 'Home'), path: '/', icon: Home },
     { name: t('nav.weathergpt', 'WeatherGPT'), path: '/weathergpt', icon: Sparkles, badge: 'AI' },
-    { name: t('nav.forecast', 'Forecast'), path: '/forecast', icon: TrendingUp },
     { name: t('nav.forecast_intelligence', 'Forecast Intelligence'), path: '/forecast-intelligence', icon: Sparkles, badge: 'PRO' },
+    { name: t('nav.dashboard', 'Dashboard'), path: '/', icon: Home },
     { name: t('nav.weather_map', 'Weather Map'), path: '/map', icon: Map },
     { name: t('nav.alerts', 'Alerts'), path: '/alerts', icon: AlertTriangle },
     { name: t('nav.climate', 'Climate'), path: '/climate', icon: CloudRain },
-    { name: t('nav.agriculture', 'Agriculture'), path: '/agriculture', icon: Leaf },
     { name: t('nav.locations', 'Locations'), path: '/locations', icon: MapPin },
   ];
 
-  const primaryPaths = ['/', '/weathergpt', '/forecast', '/map'];
+  const primaryPaths = ['/', '/weathergpt', '/map'];
   const filteredItems = isMobile 
     ? NAV_ITEMS.filter(item => !primaryPaths.includes(item.path))
     : NAV_ITEMS;
@@ -108,10 +106,10 @@ export function AppLayout() {
   };
 
   return (
-    <div className="flex h-[100dvh] w-full bg-sky-background overflow-hidden text-sky-text-primary font-sans antialiased">
+    <div className="flex h-dvh w-full bg-sky-background overflow-hidden text-sky-text-primary font-sans antialiased">
       <aside className="hidden lg:flex w-72 flex-col bg-sky-surface/60 backdrop-blur-2xl border-r border-sky-border z-20 transition-all duration-300">
         <div className="flex h-20 items-center px-8">
-          <div className="bg-gradient-to-tr from-sky-primary to-sky-ai p-2 rounded-xl shadow-md mr-3">
+          <div className="bg-linear-to-tr from-sky-primary to-sky-ai p-2 rounded-xl shadow-md mr-3">
             <Sparkles className="h-5 w-5 text-white" />
           </div>
           <div>
@@ -133,8 +131,8 @@ export function AppLayout() {
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-gradient-to-br from-sky-background to-sky-surface-elevated/30">
-        <header className="h-20 glass-panel border-b-0 border-b-[var(--border-glass)] flex items-center justify-between px-4 lg:px-10 z-10 shrink-0 sticky top-0">
+      <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-linear-to-br from-sky-background to-sky-surface-elevated/30">
+        <header className="h-20 glass-panel border-b-0 border-b-(--border-glass) flex items-center justify-between px-4 lg:px-10 z-10 shrink-0 sticky top-0">
           <div className="flex items-center lg:hidden">
             <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
               <SheetTrigger asChild>
@@ -142,9 +140,9 @@ export function AppLayout() {
                   <Menu className="h-6 w-6" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[300px] p-0 flex flex-col bg-sky-surface/95 backdrop-blur-2xl border-r border-sky-border">
+              <SheetContent side="left" className="w-75 p-0 flex flex-col bg-sky-surface/95 backdrop-blur-2xl border-r border-sky-border">
                 <div className="flex h-20 items-center px-8 border-b border-sky-border">
-                  <div className="bg-gradient-to-tr from-sky-primary to-sky-ai p-2 rounded-xl shadow-md mr-3">
+                  <div className="bg-linear-to-tr from-sky-primary to-sky-ai p-2 rounded-xl shadow-md mr-3">
                     <Sparkles className="h-5 w-5 text-white" />
                   </div>
                   <span className="text-xl font-bold tracking-tight">{t('layout.skycast', 'SkyCast')}</span>
@@ -152,7 +150,7 @@ export function AppLayout() {
                 <NavLinks isMobile onNavigate={() => setIsMobileMenuOpen(false)} />
               </SheetContent>
             </Sheet>
-            <div className="bg-gradient-to-tr from-sky-primary to-sky-ai p-1.5 rounded-lg shadow-sm mr-2">
+            <div className="bg-linear-to-tr from-sky-primary to-sky-ai p-1.5 rounded-lg shadow-sm mr-2">
               <Sparkles className="h-4 w-4 text-white" />
             </div>
             <span className="text-lg font-bold tracking-tight">{t('layout.skycast', 'SkyCast')}</span>
@@ -186,7 +184,7 @@ export function AppLayout() {
                     <Settings className="h-5 w-5 text-sky-text-secondary" />
                  </Button>
                </DialogTrigger>
-               <DialogContent className="sm:max-w-[425px]">
+               <DialogContent className="sm:max-w-106.25">
                  <DialogHeader>
                    <DialogTitle>{t('layout.settings', 'Settings')}</DialogTitle>
                    <DialogDescription>
@@ -222,7 +220,7 @@ export function AppLayout() {
                </DialogContent>
              </Dialog>
 
-             <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-sky-primary to-sky-ai ml-2 flex items-center justify-center text-white font-bold text-sm shadow-md cursor-pointer hover:shadow-lg transition-all hover:scale-105 border-2 border-sky-surface">
+             <div className="h-9 w-9 rounded-full bg-linear-to-tr from-sky-primary to-sky-ai ml-2 flex items-center justify-center text-white font-bold text-sm shadow-md cursor-pointer hover:shadow-lg transition-all hover:scale-105 border-2 border-sky-surface">
                 U
              </div>
           </div>

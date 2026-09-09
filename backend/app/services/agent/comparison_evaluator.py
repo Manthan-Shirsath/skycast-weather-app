@@ -126,9 +126,24 @@ class ComparisonEvaluator:
         except Exception:
             pass
             
+        verdict = "Conditions are comparable across these dates."
+        if winner and len(results) >= 2:
+            best = results[0]
+            runner_up = results[1]
+            if best["score"] - runner_up["score"] > 15:
+                if best["date"] == datetime.date.today().isoformat():
+                    verdict = "Today is significantly better."
+                elif best["date"] == (datetime.date.today() + datetime.timedelta(days=1)).isoformat():
+                    verdict = "Tomorrow is significantly better."
+                else:
+                    verdict = f"{best['date']} is the best option."
+            elif best["score"] - runner_up["score"] > 5:
+                verdict = f"{best['date']} is slightly better."
+
         return {
             "location": location,
             "winner": winner,
             "activity": activity,
+            "verdict": verdict,
             "comparisons": results
         }

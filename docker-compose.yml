@@ -34,6 +34,7 @@ services:
       - TTL_RADAR_META=180
       - TTL_ALERTS=600
       - COLLECTOR_POLL_INTERVAL=180
+      - ENABLE_BACKGROUND_POLLING=true
     depends_on:
       postgres:
         condition: service_healthy

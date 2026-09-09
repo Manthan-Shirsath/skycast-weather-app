@@ -64,7 +64,7 @@ async def chat_weather(req: ChatRequest = Body(...)):
         return ChatResponse(
             reply=agent_res.reply,
             city=agent_res.city,
-            timestamp=datetime.datetime.now().strftime("%I:%M %p").lstrip("0"),
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
             session_id=agent_res.session_id,
             cards=agent_res.cards,
             sources=agent_res.sources,

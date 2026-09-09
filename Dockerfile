@@ -33,6 +33,7 @@ COPY --from=builder /app/dist .
 # Nginx substitutes BACKEND_URL at container startup.
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 ENV BACKEND_URL=http://127.0.0.1:8000
+ENV NGINX_ENVSUBST_FILTER=BACKEND_URL
 
 EXPOSE 80
 
