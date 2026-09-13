@@ -73,7 +73,13 @@ class ForecastAIService:
             logger.info("ForecastAIService: Cache hit for %s", location)
             return _AI_CACHE[cache_key]
 
-        if not self.api_key:
+        from backend.app.services.key_rotator import get_rotator_for_provider, mask_key
+        rotator = get_rotator_for_provider(self.provider)
+        keys_to_try = rotator.get_all_keys()
+        if not keys_to_try and self.api_key:
+            keys_to_try = [self.api_key]
+
+        if not keys_to_try:
             logger.info("ForecastAIService: API key missing; generating deterministic analysis.")
             summary = self._fallback_deterministic_summary(location, analytics_data)
             _AI_CACHE[cache_key] = summary
@@ -87,35 +93,51 @@ class ForecastAIService:
             }
         ]
 
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                endpoint = f"{self.base_url}/chat/completions"
-                headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-                payload = {
-                    "model": self.model,
-                    "stream": False,
-                    "temperature": 0.2,
-                    "max_tokens": 200,
-                    "messages": messages
-                }
-                
-                logger.info("ForecastAIService: Generating analysis for %s using %s", location, self.model)
-                res = await client.post(endpoint, headers=headers, json=payload)
-                if res.status_code == 200:
-                    data = res.json()
-                    choices = data.get("choices", [])
-                    if choices:
-                        raw_reply = choices[0].get("message", {}).get("content") or ""
-                        # Simple cleanup if any <think> tags leak
-                        import re
-                        reply_text = re.sub(r'<think>[\s\S]*?</think>', '', raw_reply).strip()
-                        if reply_text:
-                            _AI_CACHE[cache_key] = reply_text
-                            return reply_text
-                else:
-                    logger.error("ForecastAIService API error: Status %d %s", res.status_code, res.text[:200])
-        except Exception as exc:
-            logger.error("ForecastAIService request failed: %s", exc)
+        endpoint = f"{self.base_url}/chat/completions"
+
+        for idx, current_key in enumerate(keys_to_try):
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    headers = {"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"}
+                    payload = {
+                        "model": self.model,
+                        "stream": False,
+                        "temperature": 0.2,
+                        "max_tokens": 200,
+                        "messages": messages
+                    }
+                    
+                    logger.info(
+                        "ForecastAIService: Generating analysis for %s using %s (key %s, attempt %d/%d)",
+                        location,
+                        self.model,
+                        mask_key(current_key),
+                        idx + 1,
+                        len(keys_to_try)
+                    )
+                    res = await client.post(endpoint, headers=headers, json=payload)
+                    if res.status_code == 200:
+                        data = res.json()
+                        choices = data.get("choices", [])
+                        if choices:
+                            raw_reply = choices[0].get("message", {}).get("content") or ""
+                            import re
+                            reply_text = re.sub(r'<think>[\s\S]*?</think>', '', raw_reply).strip()
+                            if reply_text:
+                                _AI_CACHE[cache_key] = reply_text
+                                return reply_text
+                    elif res.status_code == 429:
+                        logger.warning("ForecastAIService: 429 rate limit on key %s. Rotating...", mask_key(current_key))
+                        rotator.rotate_key(current_key)
+                        continue
+                    elif res.status_code in [401, 403]:
+                        logger.warning("ForecastAIService: Auth error %d on key %s. Trying alternate key...", res.status_code, mask_key(current_key))
+                        rotator.rotate_key(current_key)
+                        continue
+                    else:
+                        logger.error("ForecastAIService API error: Status %d %s", res.status_code, res.text[:200])
+            except Exception as exc:
+                logger.error("ForecastAIService request failed with key %s: %s", mask_key(current_key), exc)
 
         # Graceful fallback to deterministic synthesis
         fallback_summary = self._fallback_deterministic_summary(location, analytics_data)

@@ -47,17 +47,43 @@ class OpenMeteoProvider(BaseWeatherProvider):
             raise RuntimeError("Request failed after retries")
 
     async def geocode_city(self, city_name: str) -> Optional[Dict[str, Any]]:
-        """Query Open-Meteo Geocoding API."""
+        """Query Open-Meteo Geocoding API with Nominatim Fallback."""
         logger.info("🌐 [PROVIDER CALL] Open-Meteo Geocode for '%s'", city_name)
         url = f"{GEOCODING_API_URL}?name={city_name}&count=1&language=en&format=json"
 
-        res = await self._get_with_retry(url, timeout=10.0)
-        data = res.json()
+        try:
+            res = await self._get_with_retry(url, timeout=10.0)
+            data = res.json()
+            results = data.get("results")
+            if results and len(results) > 0:
+                return results[0]
+        except Exception as e:
+            logger.warning("⚠️ Open-Meteo geocoding failed for '%s': %s", city_name, e)
 
-        results = data.get("results")
-        if not results or len(results) == 0:
-            return None
-        return results[0]
+        # Fallback to Nominatim
+        logger.info("🌐 [PROVIDER FALLBACK] Nominatim Geocode for '%s'", city_name)
+        nominatim_url = f"https://nominatim.openstreetmap.org/search?q={city_name}&format=json&limit=1"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.get(
+                    nominatim_url,
+                    headers={"User-Agent": "SkyCastWeatherApp/1.0"}
+                )
+                res.raise_for_status()
+                data = res.json()
+                
+                if data and len(data) > 0:
+                    item = data[0]
+                    return {
+                        "name": item.get("name", city_name),
+                        "latitude": float(item.get("lat", 0)),
+                        "longitude": float(item.get("lon", 0)),
+                        "country": ""
+                    }
+        except Exception as e:
+            logger.error("❌ [PROVIDER FALLBACK] Nominatim geocoding failed: %s", e)
+
+        return None
 
     async def fetch_forecast(self, lat: float, lon: float) -> Dict[str, Any]:
         """Query Open-Meteo Forecast API for full current, hourly, and daily metrics using explicit GFS NWP model."""

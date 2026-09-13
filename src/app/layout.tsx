@@ -79,7 +79,13 @@ export function AppLayout() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(() => {
+    const saved = localStorage.getItem('skycast_theme');
+    if (saved) {
+      return saved === 'dark';
+    }
+    return true; // Default to dark mode
+  });
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -88,6 +94,14 @@ export function AppLayout() {
     setSearchQuery('');
     navigate(`${location.pathname}?city=${encodeURIComponent(city)}`);
   };
+
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDark]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -101,8 +115,11 @@ export function AppLayout() {
   }, []);
 
   const toggleTheme = () => {
-    document.documentElement.classList.toggle('dark');
-    setIsDark(!isDark);
+    setIsDark((prev) => {
+      const next = !prev;
+      localStorage.setItem('skycast_theme', next ? 'dark' : 'light');
+      return next;
+    });
   };
 
   return (

@@ -83,6 +83,7 @@ function MarkdownRenderer({ content }: { content: string }) {
   const lines = content.split('\n');
   const renderedElements: React.ReactNode[] = [];
   let currentList: string[] = [];
+  let currentTable: string[][] = [];
 
   const flushList = () => {
     if (currentList.length > 0) {
@@ -96,6 +97,41 @@ function MarkdownRenderer({ content }: { content: string }) {
         </ul>
       );
       currentList = [];
+    }
+  };
+
+  const flushTable = () => {
+    if (currentTable.length > 0) {
+      if (currentTable.length > 1) {
+        const headers = currentTable[0];
+        // currentTable[1] is typically the separator row (e.g. |---|---|), so skip it
+        const hasSeparator = currentTable[1].every(cell => cell.match(/^[-\s:]+$/));
+        const rows = hasSeparator ? currentTable.slice(2) : currentTable.slice(1);
+
+        renderedElements.push(
+          <div key={`table-${renderedElements.length}`} className="my-3 overflow-x-auto rounded-lg border border-sky-border/40 bg-sky-card/50">
+            <table className="w-full text-left text-sm text-sky-text-primary">
+              <thead className="bg-sky-background/50 text-xs uppercase bg-sky-ai/5 border-b border-sky-border/40">
+                <tr>
+                  {headers.map((h, i) => (
+                    <th key={i} className="px-4 py-2 font-medium">{renderInlineMarkdown(h)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-sky-border/20">
+                {rows.map((row, i) => (
+                  <tr key={i} className="hover:bg-sky-background/30 transition-colors">
+                    {row.map((cell, j) => (
+                      <td key={j} className="px-4 py-2">{renderInlineMarkdown(cell)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+      currentTable = [];
     }
   };
 
@@ -119,7 +155,17 @@ function MarkdownRenderer({ content }: { content: string }) {
   lines.forEach((line, index) => {
     const trimmed = line.trim();
 
+    if (trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 2) {
+      flushList();
+      // Split by pipe, clean up the array (remove first and last empty elements caused by surrounding pipes)
+      const cells = trimmed.split('|').map(c => c.trim());
+      const filteredCells = cells.slice(1, cells.length - 1);
+      currentTable.push(filteredCells);
+      return;
+    }
+
     if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ')) {
+      flushTable();
       currentList.push(trimmed.slice(2));
       return;
     }
@@ -127,6 +173,7 @@ function MarkdownRenderer({ content }: { content: string }) {
     const numMatch = trimmed.match(/^\d+\.\s+(.*)/);
     if (numMatch) {
       flushList();
+      flushTable();
       renderedElements.push(
         <div key={`num-${index}`} className="flex items-start gap-2 my-1.5 text-[14px]">
           <span className="font-bold text-sky-ai font-mono text-xs mt-0.5 min-w-[1.2rem]">{trimmed.split('.')[0]}.</span>
@@ -137,6 +184,7 @@ function MarkdownRenderer({ content }: { content: string }) {
     }
 
     flushList();
+    flushTable();
 
     if (trimmed.startsWith('### ')) {
       renderedElements.push(
@@ -175,6 +223,7 @@ function MarkdownRenderer({ content }: { content: string }) {
   });
 
   flushList();
+  flushTable();
   return <div className="space-y-1">{renderedElements}</div>;
 }
 
@@ -719,6 +768,15 @@ export default function WeatherGPTPage() {
                        <div className="space-y-1 text-sm">
                           <p className="text-sky-text-secondary"><Thermometer className="h-3 w-3 inline mr-1" />{day.temperature_max_c ?? day.high_c ?? '--'}°C</p>
                           <p className="text-sky-text-secondary"><Droplets className="h-3 w-3 inline mr-1" />{day.precipitation_probability ?? 0}%</p>
+                       </div>
+                    </div>
+                 ))}
+                 {data.models && data.models.map((model: any, i: number) => (
+                    <div key={`model-${i}`} className="text-center">
+                       <p className="text-xs font-bold text-sky-text-primary mb-2 uppercase">{model.model_name}</p>
+                       <div className="space-y-1 text-sm">
+                          <p className="text-sky-text-secondary"><Thermometer className="h-3 w-3 inline mr-1" />{model.temperature_high_c ?? '--'}°C</p>
+                          <p className="text-sky-text-secondary"><Droplets className="h-3 w-3 inline mr-1" />{model.total_precipitation_mm ? `${model.total_precipitation_mm} mm` : '0 mm'}</p>
                        </div>
                     </div>
                  ))}
@@ -1304,7 +1362,7 @@ export default function WeatherGPTPage() {
               placeholder={isListening ? "Listening... speak now" : getPlaceholder(agentMode, activeCity, t)}
               className={cn(
                 "flex-1 h-12 md:h-14 bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-4 md:px-6 text-sm md:text-base shadow-none",
-                isListening && "animate-pulse font-medium text-sky-ai placeholder:text-sky-ai"
+                isListening && "animate-pulse font-medium text-sky-ai"
               )}
               disabled={isLoading}
             />

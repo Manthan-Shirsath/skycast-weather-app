@@ -47,55 +47,52 @@ load_dotenv("backend/.env")
 
 logger = logging.getLogger("skycast.agent")
 
+from backend.app.services.key_rotator import get_rotator_for_provider, mask_key, groq_rotator, gemini_rotator, sarvam_rotator
+
 # Provider settings
 LLM_PROVIDER = (os.getenv("LLM_PROVIDER") or "groq").strip().lower()
 
 # Groq Configuration (Default / Active)
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
-GROQ_API_KEY_FALLBACK = os.getenv("GROQ_API_KEY_FALLBACK", "").strip()
 GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
-GROQ_MODEL = os.getenv("GROQ_MODEL") or os.getenv("LLM_MODEL") or "openai/gpt-oss-120b"
+GROQ_MODEL = os.getenv("GROQ_MODEL") or os.getenv("LLM_MODEL") or "openai/llama-3.3-70b-versatile"
 
 # Sarvam Configuration (Supported alternative)
-SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "").strip()
-SARVAM_API_KEY_FALLBACK = os.getenv("SARVAM_API_KEY_FALLBACK", "").strip()
 SARVAM_BASE_URL = os.getenv("SARVAM_BASE_URL", "https://api.sarvam.ai").rstrip("/")
 SARVAM_MODEL = os.getenv("SARVAM_MODEL") or "sarvam-105b"
 
 
 def _resolve_provider_settings(provider: Optional[str] = None):
     """
-    Resolve active provider, API key, base URL, model, and fallback key.
-    Defaults to Groq with openai/gpt-oss-120b, while keeping Gemini and Sarvam fully configurable.
+    Resolve active provider, API key, base URL, model, and fallback key using the key rotator pool.
+    Defaults to Groq with openai/llama-3.3-70b-versatile, while keeping Gemini and Sarvam fully configurable.
     """
     p = (provider or LLM_PROVIDER or "groq").strip().lower()
+    rotator = get_rotator_for_provider(p)
+    all_keys = rotator.get_all_keys()
+    api_key = all_keys[0] if all_keys else ""
+    fallback_key = all_keys[1] if len(all_keys) > 1 else ""
+
     if p in ["gemini", "google"]:
         p = "gemini"
-        api_key = (os.getenv("GEMINI_API_KEY") or os.getenv("gemini_api_key") or "").strip()
-        fallback_key = (os.getenv("GEMINI_API_KEY_FALLBACK") or os.getenv("gemini_api_key_fallback") or "").strip()
         base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
         model = os.getenv("GEMINI_MODEL") or os.getenv("LLM_MODEL") or "gemini-3.5-flash-lite"
     elif p == "sarvam":
-        api_key = SARVAM_API_KEY
-        fallback_key = SARVAM_API_KEY_FALLBACK
         base_url = SARVAM_BASE_URL
         configured_model = os.getenv("SARVAM_MODEL") or os.getenv("LLM_MODEL") or "sarvam-105b"
         model = configured_model if "gemini" not in configured_model.lower() else "sarvam-105b"
     else:
         p = "groq"
-        api_key = GROQ_API_KEY
-        fallback_key = GROQ_API_KEY_FALLBACK
         base_url = GROQ_BASE_URL
-        configured_model = os.getenv("GROQ_MODEL") or os.getenv("LLM_MODEL") or "openai/gpt-oss-120b"
+        configured_model = os.getenv("GROQ_MODEL") or os.getenv("LLM_MODEL") or "openai/llama-3.3-70b-versatile"
         if configured_model and ("gemini" in configured_model.lower() or "sarvam" in configured_model.lower()):
-            configured_model = "openai/gpt-oss-120b"
+            configured_model = "openai/llama-3.3-70b-versatile"
         else:
-            configured_model = configured_model or "openai/gpt-oss-120b"
+            configured_model = configured_model or "openai/llama-3.3-70b-versatile"
             
         # FIX for openai-agents SDK: The SDK extracts everything before the first '/'
         # as the provider (e.g. 'openai') and strips it from the model string.
-        # So 'openai/gpt-oss-120b' becomes just 'gpt-oss-120b', which Groq rejects.
-        # We prepend 'openai/' so it gets stripped to 'openai/gpt-oss-120b'.
+        # So 'openai/llama-3.3-70b-versatile' becomes just 'llama-3.3-70b-versatile', which Groq rejects.
+        # We prepend 'openai/' so it gets stripped to 'openai/llama-3.3-70b-versatile'.
         model = f"openai/{configured_model}" if not configured_model.startswith("openai/openai/") else configured_model
 
     return p, api_key, base_url, model, fallback_key
@@ -326,7 +323,7 @@ class WeatherGPTAgent:
                 f"The user interface is set to {lang_name}. "
                 f"You MUST respond entirely in {lang_name}. "
                 f"All your narrative text, explanations, recommendations, and advisory paragraphs must be written in {lang_name}. "
-                f"Keep all numeric values (temperatures in °C, wind speed in km/h, percentages) as-is. "
+                f"Keep all numeric values (temperatures in \u00b0C, wind speed in km/h, percentages) as-is. "
                 f"Do NOT respond in English unless the user's message itself is in English.\n\n"
             )
             system_text = directive + system_text
@@ -444,14 +441,14 @@ class WeatherGPTAgent:
         from backend.app.services.agent.hooks import UICardCollectorHook
         ui_hook = UICardCollectorHook(executed_cards, update_city)
         
-        # 4. Initialize client and SDK agent
-        keys_to_try = [self.api_key]
-        if self.api_key_fallback and self.api_key_fallback != self.api_key and len(self.api_key_fallback) > 5:
+        # 4. Resolve Keys and Rotator
+        rotator = get_rotator_for_provider(self.provider)
+        keys_to_try = rotator.get_all_keys()
+        if not keys_to_try and self.api_key:
+            keys_to_try = [self.api_key]
+        if self.api_key_fallback and self.api_key_fallback not in keys_to_try and len(self.api_key_fallback) > 5:
             keys_to_try.append(self.api_key_fallback)
             
-        client = AsyncOpenAI(api_key=keys_to_try[0], base_url=self.base_url, max_retries=2)
-        set_default_openai_client(client)
-        
         # Optional tracing depending on ENV
         import agents
         agents.set_tracing_disabled(os.getenv("AGENTS_TRACING_ENABLED", "false").lower() != "true")
@@ -484,98 +481,140 @@ class WeatherGPTAgent:
             ToolOutputGuardrailTripwireTriggered
         )
         
-        # 5. Run the agent
-        try:
-            logger.info("📡 [%s] Running OpenAI Multi-Agent Architecture (model='%s')", self.provider.upper(), self.model)
-            # Pass the hook to Runner.run so it applies to all agents in the run
-            res = await Runner.run(root_agent, input=messages, max_turns=self.max_tool_calls, hooks=ui_hook)
-            reply_text = res.final_output or "I have retrieved the centralized weather data for your request."
-            assistant_text = self._clean_reply_text(reply_text)
+        for key_idx, current_key in enumerate(keys_to_try):
+            client = AsyncOpenAI(api_key=current_key, base_url=self.base_url, max_retries=1)
+            set_default_openai_client(client)
             
-            # Deterministic post-processing for high-impact disclaimers
-            lower_reply = assistant_text.lower()
-            is_agri = any(c.type == "agriculture" for c in executed_cards) or any(w in lower_reply for w in ["spray", "pesticide", "crop", "irrigation"])
-            is_severe = any(c.type == "weather_alert" for c in executed_cards) or any(w in lower_reply for w in ["cyclone", "flood", "severe", "emergency", "hurricane"])
-            is_aviation = agent_mode == "aviation" or any(w in lower_reply for w in ["metar", "taf", "crosswind", "flight planning", "ceiling", "takeoff"])
-            is_marine = agent_mode == "marine" or any(w in lower_reply for w in ["wave height", "swell", "tide", "small craft", "boating", "voyage"])
-            
-            if is_agri:
-                assistant_text += "\n\n⚠️ Advisory: Agricultural recommendations are based on standard meteorological data. Please consult local agronomists before applying chemicals."
-            elif is_severe:
-                assistant_text += "\n\n⚠️ Disclaimer: This is an AI-generated advisory. Please consult official local authorities for critical safety decisions."
-            
-            await self._save_message(session_id, "user", user_text)
-            await self._save_message(session_id, "model", assistant_text)
-            
-            return AgentResponse(
-                reply=assistant_text,
-                city=state["resolved_city"],
-                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                session_id=session_id,
-                cards=executed_cards,
-                sources=sources,
-                data_status="fresh",
-                conversation_context=context.to_summary_dict() if context else None
-            )
-        except InputGuardrailTripwireTriggered as e:
-            msg = e.guardrail_result.output.output_info if e.guardrail_result.output.output_info else "Input rejected by safety policies."
-            logger.warning("Input Guardrail Triggered: %s", msg)
-            executed_cards.append(CardItem(type="safety_notice", data={"reason": msg}))
-            return AgentResponse(
-                reply=msg,
-                city=state["resolved_city"],
-                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                session_id=session_id,
-                cards=executed_cards,
-                sources=sources,
-                data_status="fresh",
-                is_fallback=False
-            )
-        except OutputGuardrailTripwireTriggered as e:
-            msg = e.guardrail_result.output.output_info if e.guardrail_result.output.output_info else "Output rejected by safety policies."
-            logger.warning("Output Guardrail Triggered: %s", msg)
-            executed_cards.append(CardItem(type="safety_notice", data={"reason": msg}))
-            return AgentResponse(
-                reply="I cannot provide a response for that query at this time due to safety boundaries.",
-                city=state["resolved_city"],
-                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                session_id=session_id,
-                cards=executed_cards,
-                sources=sources,
-                data_status="fresh",
-                is_fallback=False
-            )
-        except (ToolInputGuardrailTripwireTriggered, ToolOutputGuardrailTripwireTriggered) as e:
-            msg = e.output.output_info if hasattr(e, "output") and e.output and e.output.output_info else "Tool safety policy violation."
-            logger.warning("Tool Guardrail Triggered: %s", msg)
-            executed_cards.append(CardItem(type="safety_notice", data={"reason": msg}))
-            return AgentResponse(
-                reply=f"Safety Notice: {msg}",
-                city=state["resolved_city"],
-                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                session_id=session_id,
-                cards=executed_cards,
-                sources=sources,
-                data_status="fresh",
-                is_fallback=False
-            )
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            logger.error("⚠️ [%s] Agent SDK execution failed: %s", self.provider.upper(), e)
-            logger.warning("Invoking deterministic fallback.")
-            return await self._execute_deterministic_fallback(
-                user_text=user_text,
-                city=state["resolved_city"],
-                session_id=session_id,
-                history_turns=history_turns,
-                language=language,
-                user_role=user_role,
-                degraded=True,
-                context=context
-            )
-        finally:
-            await client.close()
+            # 6. Run the agent
+            try:
+                logger.info(
+                    "📡 [%s] Running OpenAI Multi-Agent Architecture (model='%s', key=%s, attempt %d/%d)",
+                    self.provider.upper(),
+                    self.model,
+                    mask_key(current_key),
+                    key_idx + 1,
+                    len(keys_to_try)
+                )
+                # Pass the hook to Runner.run so it applies to all agents in the run
+                res = await Runner.run(root_agent, input=messages, max_turns=self.max_tool_calls, hooks=ui_hook)
+                reply_text = res.final_output or "I have retrieved the centralized weather data for your request."
+                assistant_text = self._clean_reply_text(reply_text)
+                
+                # Deterministic post-processing for high-impact disclaimers
+                lower_reply = assistant_text.lower()
+                is_agri = any(c.type == "agriculture" for c in executed_cards) or any(w in lower_reply for w in ["spray", "pesticide", "crop", "irrigation"])
+                is_severe = any(c.type == "weather_alert" for c in executed_cards) or any(w in lower_reply for w in ["cyclone", "flood", "severe", "emergency", "hurricane"])
+                is_aviation = agent_mode == "aviation" or any(w in lower_reply for w in ["metar", "taf", "crosswind", "flight planning", "ceiling", "takeoff"])
+                is_marine = agent_mode == "marine" or any(w in lower_reply for w in ["wave height", "swell", "tide", "small craft", "boating", "voyage"])
+                
+                if is_agri:
+                    assistant_text += "\n\n⚠️ Advisory: Agricultural recommendations are based on standard meteorological data. Please consult local agronomists before applying chemicals."
+                elif is_severe:
+                    assistant_text += "\n\n⚠️ Disclaimer: This is an AI-generated advisory. Please consult official local authorities for critical safety decisions."
+                
+                await self._save_message(session_id, "user", user_text)
+                await self._save_message(session_id, "model", assistant_text)
+                
+                return AgentResponse(
+                    reply=assistant_text,
+                    city=state["resolved_city"],
+                    timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    session_id=session_id,
+                    cards=executed_cards,
+                    sources=sources,
+                    data_status="fresh",
+                    conversation_context=context.to_summary_dict() if context else None
+                )
+            except InputGuardrailTripwireTriggered as e:
+                msg = e.guardrail_result.output.output_info if e.guardrail_result.output.output_info else "Input rejected by safety policies."
+                logger.warning("Input Guardrail Triggered: %s", msg)
+                executed_cards.append(CardItem(type="safety_notice", data={"reason": msg}))
+                return AgentResponse(
+                    reply=msg,
+                    city=state["resolved_city"],
+                    timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    session_id=session_id,
+                    cards=executed_cards,
+                    sources=sources,
+                    data_status="fresh",
+                    is_fallback=False
+                )
+            except OutputGuardrailTripwireTriggered as e:
+                msg = e.guardrail_result.output.output_info if e.guardrail_result.output.output_info else "Output rejected by safety policies."
+                logger.warning("Output Guardrail Triggered: %s", msg)
+                executed_cards.append(CardItem(type="safety_notice", data={"reason": msg}))
+                return AgentResponse(
+                    reply="I cannot provide a response for that query at this time due to safety boundaries.",
+                    city=state["resolved_city"],
+                    timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    session_id=session_id,
+                    cards=executed_cards,
+                    sources=sources,
+                    data_status="fresh",
+                    is_fallback=False
+                )
+            except (ToolInputGuardrailTripwireTriggered, ToolOutputGuardrailTripwireTriggered) as e:
+                msg = e.output.output_info if hasattr(e, "output") and e.output and e.output.output_info else "Tool safety policy violation."
+                logger.warning("Tool Guardrail Triggered: %s", msg)
+                executed_cards.append(CardItem(type="safety_notice", data={"reason": msg}))
+                return AgentResponse(
+                    reply=f"Safety Notice: {msg}",
+                    city=state["resolved_city"],
+                    timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    session_id=session_id,
+                    cards=executed_cards,
+                    sources=sources,
+                    data_status="fresh",
+                    is_fallback=False
+                )
+            except Exception as e:
+                err_str = str(e).lower()
+                is_rate_limit = (
+                    "429" in err_str
+                    or "rate limit" in err_str
+                    or "rate_limit" in err_str
+                    or "quota" in err_str
+                    or "resource_exhausted" in err_str
+                    or getattr(e, "status_code", None) == 429
+                )
+                is_auth_error = (
+                    "401" in err_str
+                    or "403" in err_str
+                    or "unauthorized" in err_str
+                    or "invalid_api_key" in err_str
+                    or getattr(e, "status_code", None) in [401, 403]
+                )
+                if (is_rate_limit or is_auth_error) and key_idx < len(keys_to_try) - 1:
+                    logger.warning(
+                        "⚠️ [%s] %s on key %s. Rotating to next key in pool...",
+                        self.provider.upper(),
+                        "Rate limit (429)" if is_rate_limit else "Authentication error",
+                        mask_key(current_key)
+                    )
+                    rotator.rotate_key(current_key)
+                    continue
+                else:
+                    import traceback
+                    traceback.print_exc()
+                    logger.error("⚠️ [%s] Agent SDK execution failed with key %s: %s", self.provider.upper(), mask_key(current_key), e)
+                    break
+            finally:
+                try:
+                    await client.close()
+                except Exception:
+                    pass
+
+        logger.warning("All configured keys failed or exhausted. Invoking deterministic fallback.")
+        return await self._execute_deterministic_fallback(
+            user_text=user_text,
+            city=state["resolved_city"],
+            session_id=session_id,
+            history_turns=history_turns,
+            language=language,
+            user_role=user_role,
+            degraded=True,
+            context=context
+        )
 
     # Backwards-compatible alias for tests and existing callers
     _run_gemini_loop = _run_llm_loop
@@ -610,43 +649,43 @@ class WeatherGPTAgent:
     # -----------------------------------------------------------------------
     _FALLBACK_PHRASES: Dict[str, Dict[str, str]] = {
         "current": {
-            "en": "In {city}, it is currently {temp}°C (feels like {feels}°C) with {cond}. Humidity is {humidity}% and wind is {wind} km/h.{alert}",
-            "hi": "{city} में अभी {temp}°C (महसूस {feels}°C) तापमान है, मौसम {cond} है। आर्द्रता {humidity}% और हवा {wind} km/h है।{alert}",
-            "mr": "{city} मध्ये सध्या {temp}°C (जाणवते {feels}°C) तापमान आहे, हवामान {cond} आहे। आर्द्रता {humidity}% व वारा {wind} km/h आहे।{alert}",
-            "ta": "{city} இல் தற்போது {temp}°C ({feels}°C போல் உணர்கிறது), வானிலை {cond}. ஈரப்பதம் {humidity}%, காற்று {wind} km/h.{alert}",
-            "te": "{city} లో ప్రస్తుతం {temp}°C ({feels}°C అనిపిస్తుంది), వాతావరణం {cond}. తేమ {humidity}%, గాలి {wind} km/h.{alert}",
-            "bn": "{city}-তে এখন {temp}°C (অনুভব {feels}°C), আবহাওয়া {cond}। আর্দ্রতা {humidity}%, বায়ু {wind} km/h।{alert}",
-            "gu": "{city}માં અત્યારે {temp}°C (અનુભવ {feels}°C), હવામાન {cond}. ભેજ {humidity}%, પવન {wind} km/h.{alert}",
-            "kn": "{city} ನಲ್ಲಿ ಈಗ {temp}°C ({feels}°C ಅನ್ನಿಸುತ್ತಿದೆ), ಹವಾಮಾನ {cond}. ತೇವಾಂಶ {humidity}%, ಗಾಳಿ {wind} km/h.{alert}",
-            "ml": "{city} ൽ ഇപ്പോൾ {temp}°C ({feels}°C തോന്നുന്നു), കാലാവസ്ഥ {cond}. ആർദ്രത {humidity}%, കാറ്റ് {wind} km/h.{alert}",
-            "pa": "{city} ਵਿੱਚ ਹੁਣ {temp}°C (ਮਹਿਸੂਸ {feels}°C), ਮੌਸਮ {cond}। ਨਮੀ {humidity}%, ਹਵਾ {wind} km/h।{alert}",
-            "or": "{city} ରେ ବର୍ତ୍ତମାନ {temp}°C ({feels}°C ଲାଗୁଛି), ଆବହାୱା {cond}। ଆର୍ଦ୍ରତା {humidity}%, ବାୟୁ {wind} km/h।{alert}",
+            "en": "In {city}, it is currently {temp}\u00b0C (feels like {feels}\u00b0C) with {cond}. Humidity is {humidity}% and wind is {wind} km/h.{alert}",
+            "hi": "{city} में अभी {temp}\u00b0C (महसूस {feels}\u00b0C) तापमान है, मौसम {cond} है। आर्द्रता {humidity}% और हवा {wind} km/h है।{alert}",
+            "mr": "{city} मध्ये सध्या {temp}\u00b0C (जाणवते {feels}\u00b0C) तापमान आहे, हवामान {cond} आहे। आर्द्रता {humidity}% व वारा {wind} km/h आहे।{alert}",
+            "ta": "{city} இல் தற்போது {temp}\u00b0C ({feels}\u00b0C போல் உணர்கிறது), வானிலை {cond}. ஈரப்பதம் {humidity}%, காற்று {wind} km/h.{alert}",
+            "te": "{city} లో ప్రస్తుతం {temp}\u00b0C ({feels}\u00b0C అనిపిస్తుంది), వాతావరణం {cond}. తేమ {humidity}%, గాలి {wind} km/h.{alert}",
+            "bn": "{city}-তে এখন {temp}\u00b0C (অনুভব {feels}\u00b0C), আবহাওয়া {cond}। আর্দ্রতা {humidity}%, বায়ু {wind} km/h।{alert}",
+            "gu": "{city}માં અત્યારે {temp}\u00b0C (અનુભવ {feels}\u00b0C), હવામાન {cond}. ભેજ {humidity}%, પવન {wind} km/h.{alert}",
+            "kn": "{city} ನಲ್ಲಿ ಈಗ {temp}\u00b0C ({feels}\u00b0C ಅನ್ನಿಸುತ್ತಿದೆ), ಹವಾಮಾನ {cond}. ತೇವಾಂಶ {humidity}%, ಗಾಳಿ {wind} km/h.{alert}",
+            "ml": "{city} ൽ ഇപ്പോൾ {temp}\u00b0C ({feels}\u00b0C തോന്നുന്നു), കാലാവസ്ഥ {cond}. ആർദ്രത {humidity}%, കാറ്റ് {wind} km/h.{alert}",
+            "pa": "{city} ਵਿੱਚ ਹੁਣ {temp}\u00b0C (ਮਹਿਸੂਸ {feels}\u00b0C), ਮੌਸਮ {cond}। ਨਮੀ {humidity}%, ਹਵਾ {wind} km/h।{alert}",
+            "or": "{city} ରେ ବର୍ତ୍ତମାନ {temp}\u00b0C ({feels}\u00b0C ଲାଗୁଛି), ଆବହାୱା {cond}। ଆର୍ଦ୍ରତା {humidity}%, ବାୟୁ {wind} km/h।{alert}",
         },
         "tomorrow": {
-            "en": "Tomorrow ({day}) in {city}: expect {cond} with high {high}°C / low {low}°C. Rain probability: {rain}%.",
-            "hi": "कल ({day}) {city} में: {cond} की संभावना, अधिकतम {high}°C / न्यूनतम {low}°C। वर्षा संभावना: {rain}%।",
-            "mr": "उद्या ({day}) {city} मध्ये: {cond} अपेक्षित, कमाल {high}°C / किमान {low}°C। पाऊस संभावना: {rain}%।",
-            "ta": "நாளை ({day}) {city} இல்: {cond} எதிர்பார்க்கப்படுகிறது, அதிக {high}°C / குறைந்த {low}°C. மழை நிகழ்தகவு: {rain}%.",
-            "te": "రేపు ({day}) {city} లో: {cond} అంచనా, గరిష్ఠం {high}°C / కనిష్ఠం {low}°C. వర్షం అవకాశం: {rain}%.",
-            "bn": "আগামীকাল ({day}) {city}-তে: {cond} আশা করা হচ্ছে, সর্বোচ্চ {high}°C / সর্বনিম্ন {low}°C। বৃষ্টির সম্ভাবনা: {rain}%।",
-            "gu": "કાલ ({day}) {city} માં: {cond} અપેક્ષિત, મહત્તમ {high}°C / લઘુત્તમ {low}°C. વરસાદ સંભાવના: {rain}%.",
-            "kn": "ನಾಳೆ ({day}) {city} ನಲ್ಲಿ: {cond} ನಿರೀಕ್ಷಿತ, ಗರಿಷ್ಠ {high}°C / ಕನಿಷ್ಠ {low}°C. ಮಳೆ ಸಾಧ್ಯತೆ: {rain}%.",
-            "ml": "നാളെ ({day}) {city} ൽ: {cond} പ്രതീക്ഷിക്കുന്നു, ഉയർന്ന {high}°C / കുറഞ്ഞ {low}°C. മഴ സാധ്യത: {rain}%.",
-            "pa": "ਕੱਲ੍ਹ ({day}) {city} ਵਿੱਚ: {cond} ਦੀ ਸੰਭਾਵਨਾ, ਵੱਧ ਤੋਂ ਵੱਧ {high}°C / ਘੱਟੋ-ਘੱਟ {low}°C। ਮੀਂਹ ਦੀ ਸੰਭਾਵਨਾ: {rain}%।",
-            "or": "ଆସନ୍ତାକାଲି ({day}) {city} ରେ: {cond} ଅପେକ୍ଷିତ, ସର୍ବୋଚ୍ଚ {high}°C / ସର୍ବନିମ୍ନ {low}°C। ବର୍ଷା ସମ୍ଭାବନା: {rain}%।",
+            "en": "Tomorrow ({day}) in {city}: expect {cond} with high {high}\u00b0C / low {low}\u00b0C. Rain probability: {rain}%.",
+            "hi": "कल ({day}) {city} में: {cond} की संभावना, अधिकतम {high}\u00b0C / न्यूनतम {low}\u00b0C। वर्षा संभावना: {rain}%।",
+            "mr": "उद्या ({day}) {city} मध्ये: {cond} अपेक्षित, कमाल {high}\u00b0C / किमान {low}\u00b0C। पाऊस संभावना: {rain}%।",
+            "ta": "நாளை ({day}) {city} இல்: {cond} எதிர்பார்க்கப்படுகிறது, அதிக {high}\u00b0C / குறைந்த {low}\u00b0C. மழை நிகழ்தகவு: {rain}%.",
+            "te": "రేపు ({day}) {city} లో: {cond} అంచనా, గరిష్ఠం {high}\u00b0C / కనిష్ఠం {low}\u00b0C. వర్షం అవకాశం: {rain}%.",
+            "bn": "আগামীকাল ({day}) {city}-তে: {cond} আশা করা হচ্ছে, সর্বোচ্চ {high}\u00b0C / সর্বনিম্ন {low}\u00b0C। বৃষ্টির সম্ভাবনা: {rain}%।",
+            "gu": "કાલ ({day}) {city} માં: {cond} અપેક્ષિત, મહત્તમ {high}\u00b0C / લઘુત્તમ {low}\u00b0C. વરસાદ સંભાવના: {rain}%.",
+            "kn": "ನಾಳೆ ({day}) {city} ನಲ್ಲಿ: {cond} ನಿರೀಕ್ಷಿತ, ಗರಿಷ್ಠ {high}\u00b0C / ಕನಿಷ್ಠ {low}\u00b0C. ಮಳೆ ಸಾಧ್ಯತೆ: {rain}%.",
+            "ml": "നാളെ ({day}) {city} ൽ: {cond} പ്രതീക്ഷിക്കുന്നു, ഉയർന്ന {high}\u00b0C / കുറഞ്ഞ {low}\u00b0C. മഴ സാധ്യത: {rain}%.",
+            "pa": "ਕੱਲ੍ਹ ({day}) {city} ਵਿੱਚ: {cond} ਦੀ ਸੰਭਾਵਨਾ, ਵੱਧ ਤੋਂ ਵੱਧ {high}\u00b0C / ਘੱਟੋ-ਘੱਟ {low}\u00b0C। ਮੀਂਹ ਦੀ ਸੰਭਾਵਨਾ: {rain}%।",
+            "or": "ଆସନ୍ତାକାଲି ({day}) {city} ରେ: {cond} ଅପେକ୍ଷିତ, ସର୍ବୋଚ୍ଚ {high}\u00b0C / ସର୍ବନିମ୍ନ {low}\u00b0C। ବର୍ଷା ସମ୍ଭାବନା: {rain}%।",
         },
         "rain_yes": {
-            "en": "Yes, {rain}% chance of rain in {city} — umbrella recommended.",
-            "hi": "हाँ, {city} में {rain}% बारिश की संभावना है — छाता लेकर जाएं।",
-            "mr": "होय, {city} मध्ये {rain}% पावसाची शक्यता — छत्री न्या।",
-            "ta": "ஆம், {city} இல் {rain}% மழை வாய்ப்பு — குடை எடுத்துச் செல்லுங்கள்.",
-            "te": "అవును, {city} లో {rain}% వర్షం అవకాశం — గొడుగు తీసుకోండి.",
-            "bn": "হ্যাঁ, {city}-তে {rain}% বৃষ্টির সম্ভাবনা — ছাতা নিন।",
-            "gu": "હા, {city} માં {rain}% વરસાદ સંભાવના — છત્રી લઈ જાઓ.",
-            "kn": "ಹೌದು, {city} ನಲ್ಲಿ {rain}% ಮಳೆ ಸಾಧ್ಯತೆ — ಛತ್ರಿ ತೆಗೆದುಕೊಳ್ಳಿ.",
-            "ml": "ഹ്യാ, {city} ൽ {rain}% മഴ സാധ്യത — കുട കൊണ്ടുപോകൂ.",
-            "pa": "ਹਾਂ, {city} ਵਿੱਚ {rain}% ਮੀਂਹ ਦੀ ਸੰਭਾਵਨਾ — ਛੱਤਰੀ ਲਓ।",
-            "or": "ହଁ, {city} ରେ {rain}% ବର୍ଷା ସମ୍ଭାବନା — ଛତା ନିଅ।",
+            "en": "Yes, {rain}% chance of rain in {city} \u2014 umbrella recommended.",
+            "hi": "हाँ, {city} में {rain}% बारिश की संभावना है \u2014 छाता लेकर जाएं।",
+            "mr": "होय, {city} मध्ये {rain}% पावसाची शक्यता \u2014 छत्री न्या।",
+            "ta": "ஆம், {city} இல் {rain}% மழை வாய்ப்பு \u2014 குடை எடுத்துச் செல்லுங்கள்.",
+            "te": "అవును, {city} లో {rain}% వర్షం అవకాశం \u2014 గొడుగు తీసుకోండి.",
+            "bn": "হ্যাঁ, {city}-তে {rain}% বৃষ্টির সম্ভাবনা \u2014 ছাতা নিন।",
+            "gu": "હા, {city} માં {rain}% વરસાદ સંભાવના \u2014 છત્રી લઈ જાઓ.",
+            "kn": "ಹೌದು, {city} ನಲ್ಲಿ {rain}% ಮಳೆ ಸಾಧ್ಯತೆ \u2014 ಛತ್ರಿ ತೆಗೆದುಕೊಳ್ಳಿ.",
+            "ml": "ഹ്യാ, {city} ൽ {rain}% മഴ സാധ്യത \u2014 കുട കൊണ്ടുപോകൂ.",
+            "pa": "ਹਾਂ, {city} ਵਿੱਚ {rain}% ਮੀਂਹ ਦੀ ਸੰਭਾਵਨਾ \u2014 ਛੱਤਰੀ ਲਓ।",
+            "or": "ହଁ, {city} ରେ {rain}% ବର୍ଷା ସମ୍ଭାବନା \u2014 ଛତା ନିଅ।",
         },
         "rain_no": {
             "en": "Rain is unlikely in {city} today ({rain}% precipitation probability).",
@@ -843,7 +882,7 @@ class WeatherGPTAgent:
                 elif is_cricket and act_eval:
                     reply = f"For cricket at {p_hour} ({context.date_expression if context else 'tomorrow'}) in {city}: {act_eval.get('reason')} {act_eval.get('recommendation')}"
                 else:
-                    reply = f"{context.date_expression.title() if context else 'Tomorrow'} ({p_hour}) in {city}: expect {p_cond} with temperature around {p_temp}°C. Rain probability: {p_rain}%."
+                    reply = f"{context.date_expression.title() if context else 'Tomorrow'} ({p_hour}) in {city}: expect {p_cond} with temperature around {p_temp}\u00b0C. Rain probability: {p_rain}%."
 
                 if act_eval:
                     cards.append(CardItem(type="activity_suitability", data=act_eval))
@@ -872,7 +911,7 @@ class WeatherGPTAgent:
                         rain_chance=d_rain
                     )
                 else:
-                    reply = f"{context.date_expression.title() if context else d_day} in {city}: expect {d_cond} with high {d_high}°C / low {d_low}°C. Rain probability: {d_rain}%."
+                    reply = f"{context.date_expression.title() if context else d_day} in {city}: expect {d_cond} with high {d_high}\u00b0C / low {d_low}\u00b0C. Rain probability: {d_rain}%."
 
                 cards.append(CardItem(type="forecast", data=forecast_res))
             else:
@@ -904,7 +943,7 @@ class WeatherGPTAgent:
             rec_item = rec_res.get("recommendations", {})
             if isinstance(rec_item, list) and rec_item:
                 rec_item = rec_item[0]
-            reply = f"{rec_item.get('emoji', '💡')} {rec_item.get('title', 'Recommendation')}: {rec_item.get('action', '')} (Current temp: {temp}°C, rain chance: {rain_chance}%, wind: {wind} km/h)."
+            reply = f"{rec_item.get('emoji', '💡')} {rec_item.get('title', 'Recommendation')}: {rec_item.get('action', '')} (Current temp: {temp}\u00b0C, rain chance: {rain_chance}%, wind: {wind} km/h)."
             cards.append(CardItem(type="recommendation", data=rec_res))
 
         elif "compare" in q or ("which" in q and ("rain" in q or "wetter" in q or "hotter" in q or "higher" in q or "better" in q)):
@@ -931,8 +970,8 @@ class WeatherGPTAgent:
                 reply = f"{better} is more favorable for an outdoor event because it has a lower rain probability ({min(p_tmrw_rain, c_tmrw_rain)}% vs {max(p_tmrw_rain, c_tmrw_rain)}%)."
             else:
                 reply = (
-                    f"In {city}, it is currently {temp}°C with {cond.lower()} (Rain chance tomorrow: {p_tmrw_rain}%). "
-                    f"In {comp_city}, it is {c_temp}°C with {c_cond.lower()} (Rain chance tomorrow: {c_tmrw_rain}%)."
+                    f"In {city}, it is currently {temp}\u00b0C with {cond.lower()} (Rain chance tomorrow: {p_tmrw_rain}%). "
+                    f"In {comp_city}, it is {c_temp}\u00b0C with {c_cond.lower()} (Rain chance tomorrow: {c_tmrw_rain}%)."
                 )
 
             cards.append(CardItem(type="comparison", data={"primary": city, "comparison": comp_city, "primaryTemp": temp, "compTemp": c_temp}))
@@ -987,7 +1026,7 @@ class WeatherGPTAgent:
             matched_day = next((d for d in daily if d.get("day", "").lower().startswith(target_day_name[:3].lower())), daily[-1] if daily else None)
             if matched_day:
                 matched_rain = matched_day.get("daily_precipitation_probability", matched_day.get("rainChance", 0))
-                reply = f"Forecast for {matched_day.get('day')} in {city}: {matched_day.get('condition')} with high {matched_day.get('highC')}°C / low {matched_day.get('lowC')}°C. Rain probability: {matched_rain}%."
+                reply = f"Forecast for {matched_day.get('day')} in {city}: {matched_day.get('condition')} with high {matched_day.get('highC')}\u00b0C / low {matched_day.get('lowC')}\u00b0C. Rain probability: {matched_rain}%."
                 cards.append(CardItem(type="forecast", data=weather_data))
             else:
                 reply = f"Extended forecast for {target_day_name} in {city} is currently unavailable."
@@ -1013,7 +1052,7 @@ class WeatherGPTAgent:
             alert_part = ""
             if active_alerts:
                 a = active_alerts[0]
-                alert_part = f" [{a.get('hazardClassification','').replace('_',' ').title()} — {a.get('skycastRiskColour','').upper()}]"
+                alert_part = f" [{a.get('hazardClassification','').replace('_',' ').title()} \u2014 {a.get('skycastRiskColour','').upper()}]"
             reply = self._ft(
                 "current", language,
                 city=city, temp=temp, feels=feels,

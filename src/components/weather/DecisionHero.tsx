@@ -216,7 +216,7 @@ export function DecisionHero({
       verdict.accentBorder,
     )}>
       {/* ── Hero Header ────────────────────────────────────────────── */}
-      <div className={cn('px-4 pt-4 pb-3 bg-gradient-to-b', verdict.headerBg)}>
+      <div className={cn('px-4 pt-4 pb-3 bg-linear-to-b', verdict.headerBg)}>
         {/* Activity row */}
         <div className="flex items-start justify-between gap-2 mb-2">
           <div>

@@ -81,7 +81,7 @@ function DeltaDisplay({ change }: { change: AlertChange }) {
     : 'text-sky-text-secondary';
 
   return (
-    <div className="flex flex-col items-center gap-1 min-w-[110px]">
+    <div className="flex flex-col items-center gap-1 min-w-27.5">
       {/* Old value */}
       <div className="text-center">
         <p className="text-2xl font-bold text-sky-text-secondary/60 leading-none">

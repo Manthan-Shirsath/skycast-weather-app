@@ -17,24 +17,22 @@ logger = logging.getLogger("skycast.llm_service")
 
 LLM_PROVIDER = (os.getenv("LLM_PROVIDER") or "groq").strip().lower()
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
-GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
-GROQ_MODEL = os.getenv("GROQ_MODEL") or os.getenv("LLM_MODEL") or "openai/gpt-oss-120b"
-
-SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "").strip()
-SARVAM_BASE_URL = os.getenv("SARVAM_BASE_URL", "https://api.sarvam.ai").rstrip("/")
-SARVAM_MODEL = os.getenv("SARVAM_MODEL") or "sarvam-105b"
-
+from backend.app.services.key_rotator import get_rotator_for_provider, mask_key, groq_rotator, gemini_rotator, sarvam_rotator
 
 def _resolve_service_defaults():
+    rotator = get_rotator_for_provider(LLM_PROVIDER)
+    active_key = rotator.get_current_key() or ""
     if LLM_PROVIDER in ["gemini", "google"]:
-        gemini_key = (os.getenv("GEMINI_API_KEY") or os.getenv("gemini_api_key") or "").strip()
         gemini_base = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
         gemini_model = os.getenv("GEMINI_MODEL") or os.getenv("LLM_MODEL") or "gemini-3.5-flash-lite"
-        return "gemini", gemini_key, gemini_base, gemini_model
+        return "gemini", active_key, gemini_base, gemini_model
     if LLM_PROVIDER == "sarvam":
-        return "sarvam", SARVAM_API_KEY, SARVAM_BASE_URL, SARVAM_MODEL
-    return "groq", GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL
+        sarvam_base = os.getenv("SARVAM_BASE_URL", "https://api.sarvam.ai").rstrip("/")
+        sarvam_model = os.getenv("SARVAM_MODEL") or "sarvam-105b"
+        return "sarvam", active_key, sarvam_base, sarvam_model
+    groq_base = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+    groq_model = os.getenv("GROQ_MODEL") or os.getenv("LLM_MODEL") or "openai/gpt-oss-120b"
+    return "groq", active_key, groq_base, groq_model
 
 
 DEFAULT_PROVIDER, DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_MODEL = _resolve_service_defaults()
@@ -115,7 +113,12 @@ class GeminiWeatherService:
         Sends structured weather context and user message to Groq / Sarvam.
         Falls back gracefully to local rule-based response if API key is missing or network fails.
         """
-        if not self.api_key:
+        rotator = get_rotator_for_provider(self.provider)
+        keys_to_try = rotator.get_all_keys()
+        if not keys_to_try and self.api_key:
+            keys_to_try = [self.api_key]
+
+        if not keys_to_try:
             logger.warning("[%s] API key missing; falling back to structured rule-based response.", self.provider.upper())
             return self._fallback_rule_response(user_message, weather_context)
 
@@ -140,39 +143,70 @@ class GeminiWeatherService:
         })
 
         import asyncio
-        try:
-            async with httpx.AsyncClient(timeout=14.0) as client:
-                endpoint = f"{self.base_url}/chat/completions"
-                headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-                payload = {
-                    "model": self.model,
-                    "stream": False,
-                    "temperature": 0.2,
-                    "max_tokens": 600,
-                    "messages": messages
-                }
-                try:
-                    logger.info("Sending request to %s model: '%s'", self.provider.upper(), self.model)
-                    res = await asyncio.wait_for(
-                        client.post(endpoint, headers=headers, json=payload),
-                        timeout=12.0
-                    )
-                    if res.status_code == 200:
-                        data = res.json()
-                        choices = data.get("choices", [])
-                        if choices:
-                            raw_reply = choices[0].get("message", {}).get("content") or ""
-                            reply_text = re.sub(r'<think>[\s\S]*?</think>', '', raw_reply).strip()
-                            if reply_text:
-                                return reply_text
-                    else:
-                        logger.warning("%s API error (Status %d): %s", self.provider.upper(), res.status_code, res.text[:200])
-                except (asyncio.TimeoutError, Exception) as exc:
-                    logger.warning("%s request error: %s", self.provider.upper(), exc)
-        except Exception as client_exc:
-            logger.warning("%s client error: %s", self.provider.upper(), client_exc)
+        endpoint = f"{self.base_url}/chat/completions"
 
-        logger.info("Using structured rule response.")
+        for idx, key in enumerate(keys_to_try):
+            try:
+                async with httpx.AsyncClient(timeout=14.0) as client:
+                    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+                    payload = {
+                        "model": self.model,
+                        "stream": False,
+                        "temperature": 0.2,
+                        "max_tokens": 600,
+                        "messages": messages
+                    }
+                    try:
+                        logger.info(
+                            "Sending request to %s model '%s' using key %s (%d/%d)",
+                            self.provider.upper(),
+                            self.model,
+                            mask_key(key),
+                            idx + 1,
+                            len(keys_to_try)
+                        )
+                        res = await asyncio.wait_for(
+                            client.post(endpoint, headers=headers, json=payload),
+                            timeout=12.0
+                        )
+                        if res.status_code == 200:
+                            data = res.json()
+                            choices = data.get("choices", [])
+                            if choices:
+                                raw_reply = choices[0].get("message", {}).get("content") or ""
+                                reply_text = re.sub(r'<think>[\s\S]*?</think>', '', raw_reply).strip()
+                                if reply_text:
+                                    return reply_text
+                        elif res.status_code == 429:
+                            logger.warning(
+                                "⚠️ [%s] Rate limit (429 Too Many Requests) on key %s. Rotating key...",
+                                self.provider.upper(),
+                                mask_key(key)
+                            )
+                            rotator.rotate_key(key)
+                            continue  # Try next key in rotation pool
+                        elif res.status_code in [401, 403]:
+                            logger.warning(
+                                "⚠️ [%s] Authentication error (%d) on key %s. Trying alternate key...",
+                                self.provider.upper(),
+                                res.status_code,
+                                mask_key(key)
+                            )
+                            rotator.rotate_key(key)
+                            continue
+                        else:
+                            logger.warning(
+                                "%s API error (Status %d): %s",
+                                self.provider.upper(),
+                                res.status_code,
+                                res.text[:200]
+                            )
+                    except (asyncio.TimeoutError, Exception) as exc:
+                        logger.warning("%s request error with key %s: %s", self.provider.upper(), mask_key(key), exc)
+            except Exception as client_exc:
+                logger.warning("%s client error: %s", self.provider.upper(), client_exc)
+
+        logger.info("All LLM attempts exhausted or failed. Using structured rule response.")
         return self._fallback_rule_response(user_message, weather_context)
 
 

@@ -147,9 +147,15 @@ class AgricultureService:
             spraying_summary = f"Consider avoiding spraying today: {'; '.join(spray_issues)}"
 
         # 3. Evaluate Irrigation Guidance
-        if expected_rain_mm >= 8.0 or next_48h_rain_prob >= 60:
+        if expected_rain_mm >= 8.0:
             irrigation_status = "POSTPONE"
             irrigation_guidance = f"Consider delaying scheduled irrigation. Significant rainfall (~{expected_rain_mm:.1f} mm) is projected within 48 hours."
+        elif next_48h_rain_prob >= 60:
+            irrigation_status = "POSTPONE"
+            if expected_rain_mm < 1.0:
+                irrigation_guidance = f"High rain probability ({next_48h_rain_prob}%) but negligible expected volume (~{expected_rain_mm:.1f} mm). Consider waiting for clearer skies before heavy watering."
+            else:
+                irrigation_guidance = f"Consider delaying scheduled irrigation. Measurable rainfall (~{expected_rain_mm:.1f} mm) is projected."
         elif expected_rain_mm >= 3.0 or next_48h_rain_prob >= 40:
             irrigation_status = "HOLD / MONITOR"
             irrigation_guidance = f"Moderate rain chance ({next_48h_rain_prob}%). Consider holding irrigation and monitor local soil moisture levels."

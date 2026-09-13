@@ -17,7 +17,7 @@ RAW_DATABASE_URL = os.getenv(
     "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/skycast_weather"
 )
 
-# Ensure asyncpg dialect
+# Ensure asyncpg dialect and handle Supabase/PgBouncer connection strings
 if RAW_DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = RAW_DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 elif RAW_DATABASE_URL.startswith("postgresql://") and not RAW_DATABASE_URL.startswith("postgresql+asyncpg://"):
@@ -25,13 +25,23 @@ elif RAW_DATABASE_URL.startswith("postgresql://") and not RAW_DATABASE_URL.start
 else:
     DATABASE_URL = RAW_DATABASE_URL
 
+# Normalize sslmode for asyncpg (asyncpg expects `ssl` not `sslmode`)
+if "sslmode=" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("sslmode=require", "ssl=require").replace("sslmode=prefer", "ssl=prefer").replace("sslmode=disable", "ssl=disable")
+
+connect_args = {}
+if "supabase" in DATABASE_URL.lower() or "pooler" in DATABASE_URL.lower():
+    # Supabase connection poolers (PgBouncer) require disabling prepared statement cache
+    connect_args["statement_cache_size"] = 0
+
 # Create Async Engine with connection pooling and health check
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
     pool_size=10,
-    max_overflow=20
+    max_overflow=20,
+    connect_args=connect_args
 )
 
 async_session_factory = async_sessionmaker(

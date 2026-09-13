@@ -14,8 +14,9 @@ services:
       # AI Model Configuration (Groq / Sarvam)
       - LLM_PROVIDER=${LLM_PROVIDER:-groq}
       - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROQ_API_KEY_FALLBACK=${GROQ_API_KEY_FALLBACK:-}
       - GROQ_BASE_URL=${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
-      - GROQ_MODEL=${GROQ_MODEL:-openai/gpt-oss-120b}
+      - GROQ_MODEL=${GROQ_MODEL:-openai/openai/gpt-oss-120b}
       - SARVAM_API_KEY=${SARVAM_API_KEY:-}
       - SARVAM_API_KEY_FALLBACK=${SARVAM_API_KEY_FALLBACK:-}
       - SARVAM_BASE_URL=${SARVAM_BASE_URL:-https://api.sarvam.ai}

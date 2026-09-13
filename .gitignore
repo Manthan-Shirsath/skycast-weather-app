@@ -101,4 +101,7 @@ scratch/
 lint_output.txt
 slice_collage.py
 slice_fixed.py
+backend/test_*.py
+supabase/
+
 
