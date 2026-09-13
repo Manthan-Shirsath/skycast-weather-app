@@ -49,9 +49,12 @@ async def get_forecast_intelligence(location: str, db: AsyncSession = Depends(ge
     
     runs_map = await _fetch_runs_for_location(location, db)
     
-    # On-demand ingestion fallback if database is empty for this location
-    if not runs_map:
-        logger.info("ℹ️ No multi-model forecast data in DB for '%s'. Ingesting on-demand...", location)
+    # On-demand ingestion fallback if any operational model is missing from DB for this location
+    operational_models = [m for m, meta in MODEL_REGISTRY.items() if meta.get("availability") == "operational"]
+    missing_models = [m for m in operational_models if m not in runs_map]
+    
+    if missing_models:
+        logger.info("ℹ️ Missing forecast models in DB for '%s' (%s). Ingesting on-demand...", location, missing_models)
         from backend.app.services.forecast_ingestion import forecast_ingestion_service
         await forecast_ingestion_service.ingest_location(location)
         runs_map = await _fetch_runs_for_location(location, db)

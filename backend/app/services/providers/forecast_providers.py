@@ -159,7 +159,7 @@ class EcmwfAifsProvider(OpenMeteoEnsembleBase):
     def model_name(self) -> str:
         return "ECMWF AIFS"
         
-    _upstream_model_name = "ecmwf_aifs025"
+    _upstream_model_name = "ecmwf_aifs025_single"
 
 
 class NoaaGfsProvider(OpenMeteoEnsembleBase):
