@@ -6,8 +6,10 @@ from backend.app.services.providers.base import BaseWeatherProvider
 
 logger = logging.getLogger("skycast.provider.open_meteo")
 
-GEOCODING_API_URL = "https://geocoding-api.open-meteo.com/v1/search"
-FORECAST_API_URL = "https://api.open-meteo.com/v1/forecast"
+import os
+
+GEOCODING_API_URL = os.getenv("OPEN_METEO_GEOCODE_URL", "https://geocoding-api.open-meteo.com/v1/search")
+FORECAST_API_URL = os.getenv("OPEN_METEO_FORECAST_URL", "https://api.open-meteo.com/v1/forecast")
 
 
 class OpenMeteoProvider(BaseWeatherProvider):
