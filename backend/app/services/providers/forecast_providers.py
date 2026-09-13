@@ -57,7 +57,7 @@ class OpenMeteoEnsembleBase(ForecastProvider):
     
     async def fetch_forecast(self, location_name: str, lat: float, lon: float) -> Dict[str, Any]:
         import asyncio
-        url = "https://api.open-meteo.com/v1/forecast"
+        url = "https://ensemble-api.open-meteo.com/v1/ensemble"
         
         # Request temperature, precipitation, and wind speed
         params = {
@@ -176,7 +176,7 @@ class EcmwfAifsProvider(OpenMeteoEnsembleBase):
     def model_name(self) -> str:
         return "ECMWF AIFS"
         
-    _upstream_model_name = "ecmwf_aifs025_single"
+    _upstream_model_name = "ecmwf_aifs025"
 
 
 class NoaaGfsProvider(OpenMeteoEnsembleBase):
