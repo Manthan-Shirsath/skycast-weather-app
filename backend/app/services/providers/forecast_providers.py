@@ -56,9 +56,10 @@ class OpenMeteoEnsembleBase(ForecastProvider):
     _upstream_model_name: str = ""
     
     async def fetch_forecast(self, location_name: str, lat: float, lon: float) -> Dict[str, Any]:
+        import asyncio
         url = "https://api.open-meteo.com/v1/forecast"
         
-        # Request temperature, precipitation, cloud cover, and wind speed
+        # Request temperature, precipitation, and wind speed
         params = {
             "latitude": lat,
             "longitude": lon,
@@ -67,10 +68,26 @@ class OpenMeteoEnsembleBase(ForecastProvider):
             "timezone": "UTC"
         }
         
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return resp.json()
+        headers = {
+            "User-Agent": "SkyCastWeatherPlatform/2.0 (https://github.com/Manthan-Shirsath/skycast-weather-app; contact: admin@skycast.internal)",
+            "Accept": "application/json"
+        }
+        
+        async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
+            for attempt in range(4):
+                try:
+                    resp = await client.get(url, params=params)
+                    if resp.status_code == 429 and attempt < 3:
+                        await asyncio.sleep((attempt + 1) * 2.0)
+                        continue
+                    resp.raise_for_status()
+                    return resp.json()
+                except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+                    if attempt < 3:
+                        await asyncio.sleep(1.5)
+                        continue
+                    raise exc
+            raise RuntimeError(f"Failed to fetch forecast for {self.model_id} after retries")
 
     def normalize(self, raw_data: Dict[str, Any], location_name: str) -> List[Dict[str, Any]]:
         results = []
