@@ -17,15 +17,19 @@ class OpenMeteoProvider(BaseWeatherProvider):
     def provider_name(self) -> str:
         return "open_meteo"
 
-    async def _get_with_retry(self, url: str, timeout: float = 12.0, max_retries: int = 2) -> httpx.Response:
+    async def _get_with_retry(self, url: str, timeout: float = 12.0, max_retries: int = 3) -> httpx.Response:
         """Execute GET request with exponential backoff on HTTP 429 Rate Limit responses."""
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        headers = {
+            "User-Agent": "SkyCastWeatherPlatform/2.0 (https://github.com/Manthan-Shirsath/skycast-weather-app; contact: admin@skycast.internal)",
+            "Accept": "application/json"
+        }
+        async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
             for attempt in range(max_retries + 1):
                 try:
                     res = await client.get(url)
                     if res.status_code == 429:
                         if attempt < max_retries:
-                            backoff = (attempt + 1) * 1.5
+                            backoff = (attempt + 1) * 2.0
                             logger.warning("⚠️ [OPEN-METEO 429] Rate limited. Retrying in %.1fs (Attempt %d/%d)...", backoff, attempt + 1, max_retries)
                             await asyncio.sleep(backoff)
                             continue
@@ -35,7 +39,7 @@ class OpenMeteoProvider(BaseWeatherProvider):
                     return res
                 except httpx.HTTPStatusError as err:
                     if err.response.status_code == 429 and attempt < max_retries:
-                        backoff = (attempt + 1) * 1.5
+                        backoff = (attempt + 1) * 2.0
                         await asyncio.sleep(backoff)
                         continue
                     raise err
@@ -86,7 +90,7 @@ class OpenMeteoProvider(BaseWeatherProvider):
         return None
 
     async def fetch_forecast(self, lat: float, lon: float) -> Dict[str, Any]:
-        """Query Open-Meteo Forecast API for full current, hourly, and daily metrics using explicit GFS NWP model."""
+        """Query Open-Meteo Forecast API with seamless fallback."""
         logger.info("🌐 [PROVIDER CALL] Open-Meteo GFS Forecast for (%f, %f)", lat, lon)
         url = (
             f"{FORECAST_API_URL}"
@@ -98,8 +102,21 @@ class OpenMeteoProvider(BaseWeatherProvider):
             f"&timezone=auto"
         )
 
-        res = await self._get_with_retry(url, timeout=12.0)
-        return res.json()
+        try:
+            res = await self._get_with_retry(url, timeout=12.0)
+            return res.json()
+        except Exception as err:
+            logger.warning("⚠️ GFS seamless forecast request failed (%s). Retrying with standard Open-Meteo ensemble endpoint...", err)
+            url_fallback = (
+                f"{FORECAST_API_URL}"
+                f"?latitude={lat}&longitude={lon}"
+                f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,surface_pressure,pressure_msl,precipitation,cloud_cover,rain"
+                f"&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,weather_code,surface_pressure,pressure_msl,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m,uv_index"
+                f"&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,precipitation_hours,sunrise,sunset,uv_index_max,wind_speed_10m_max,wind_gusts_10m_max"
+                f"&timezone=auto"
+            )
+            res = await self._get_with_retry(url_fallback, timeout=12.0)
+            return res.json()
 
     async def fetch_batch_forecast(self, coords: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Batch query multiple coordinates in a single Open-Meteo request using explicit GFS NWP model."""
