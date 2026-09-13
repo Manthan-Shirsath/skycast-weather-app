@@ -20,21 +20,19 @@ router = APIRouter(
 async def _fetch_runs_for_location(location: str, db: AsyncSession) -> Dict[str, ForecastRun]:
     runs = {}
     loc_clean = location.strip().lower()
+    operational_ids = [m for m, meta in MODEL_REGISTRY.items() if meta.get("availability") == "operational"]
     try:
-        for model_id, meta in MODEL_REGISTRY.items():
-            if meta.get("availability") != "operational":
-                continue
-                
-            stmt = select(ForecastRun).where(
-                ForecastRun.model_id == model_id,
-                func.lower(ForecastRun.location_name) == loc_clean,
-                ForecastRun.status == "success"
-            ).order_by(ForecastRun.run_time.desc()).options(selectinload(ForecastRun.values)).limit(1)
-            
-            result = await db.execute(stmt)
-            run = result.scalar_one_or_none()
-            if run:
-                runs[model_id] = run
+        stmt = select(ForecastRun).where(
+            ForecastRun.model_id.in_(operational_ids),
+            func.lower(ForecastRun.location_name) == loc_clean,
+            ForecastRun.status == "success"
+        ).order_by(ForecastRun.run_time.desc()).options(selectinload(ForecastRun.values))
+        
+        result = await db.execute(stmt)
+        all_runs = result.scalars().all()
+        for run in all_runs:
+            if run.model_id not in runs:
+                runs[run.model_id] = run
     except Exception as exc:
         logger.warning("⚠️ Error querying forecast runs from database (%s). Returning available models.", exc)
     return runs

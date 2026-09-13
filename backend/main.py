@@ -13,6 +13,7 @@ if PROJECT_ROOT not in sys.path:
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from backend.app.core.cache import cache
 from backend.app.core.database import init_db, close_db
@@ -61,6 +62,9 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+
+# Enable GZip compression for responses > 1KB
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Enable CORS for React frontend
 app.add_middleware(

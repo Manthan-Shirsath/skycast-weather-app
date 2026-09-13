@@ -1,15 +1,30 @@
+import React, { lazy, Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from './layout';
 
-// Lazy loading features
-import DashboardPage from '../features/dashboard/DashboardPage';
-import WeatherGPTPage from '../features/weathergpt/WeatherGPTPage';
-import MapPage from '../features/map/MapPage';
-import ClimatePage from '../features/climate/ClimatePage';
-import AlertsPage from '../features/alerts/AlertsPage';
-import AgriculturePage from '../features/agriculture/AgriculturePage';
-import LocationsPage from '../features/locations/LocationsPage';
-import ForecastIntelligencePage from '../features/forecast-intelligence/ForecastIntelligencePage';
+// Loading Skeleton for seamless lazy transitions
+const PageLoadingFallback = () => (
+  <div className="w-full h-full min-h-[70vh] flex flex-col items-center justify-center p-8 gap-4 animate-pulse">
+    <div className="w-12 h-12 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+    <div className="text-sm font-medium text-text-secondary">Loading view...</div>
+  </div>
+);
+
+// Route-level Code Splitting (Lazy Loading)
+const DashboardPage = lazy(() => import('../features/dashboard/DashboardPage'));
+const WeatherGPTPage = lazy(() => import('../features/weathergpt/WeatherGPTPage'));
+const MapPage = lazy(() => import('../features/map/MapPage'));
+const ClimatePage = lazy(() => import('../features/climate/ClimatePage'));
+const AlertsPage = lazy(() => import('../features/alerts/AlertsPage'));
+const AgriculturePage = lazy(() => import('../features/agriculture/AgriculturePage'));
+const LocationsPage = lazy(() => import('../features/locations/LocationsPage'));
+const ForecastIntelligencePage = lazy(() => import('../features/forecast-intelligence/ForecastIntelligencePage'));
+
+const withSuspense = (Component: React.ComponentType) => (
+  <Suspense fallback={<PageLoadingFallback />}>
+    <Component />
+  </Suspense>
+);
 
 export const router = createBrowserRouter([
   {
@@ -18,11 +33,11 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <DashboardPage />,
+        element: withSuspense(DashboardPage),
       },
       {
         path: 'weathergpt',
-        element: <WeatherGPTPage />,
+        element: withSuspense(WeatherGPTPage),
       },
       {
         path: 'forecast',
@@ -30,7 +45,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'map',
-        element: <MapPage />,
+        element: withSuspense(MapPage),
       },
       {
         path: 'maps',
@@ -38,23 +53,23 @@ export const router = createBrowserRouter([
       },
       {
         path: 'alerts',
-        element: <AlertsPage />,
+        element: withSuspense(AlertsPage),
       },
       {
         path: 'climate',
-        element: <ClimatePage />,
+        element: withSuspense(ClimatePage),
       },
       {
         path: 'agriculture',
-        element: <AgriculturePage />,
+        element: withSuspense(AgriculturePage),
       },
       {
         path: 'locations',
-        element: <LocationsPage />,
+        element: withSuspense(LocationsPage),
       },
       {
         path: 'forecast-intelligence',
-        element: <ForecastIntelligencePage />,
+        element: withSuspense(ForecastIntelligencePage),
       },
     ],
   },
