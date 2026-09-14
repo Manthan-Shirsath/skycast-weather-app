@@ -1,9 +1,4 @@
 {
-  "build": {
-    "env": {
-      "VITE_API_URL": "https://skycast-weather-app-6s57.onrender.com"
-    }
-  },
   "headers": [
     {
       "source": "/assets/(.*)",
@@ -25,22 +20,6 @@
     }
   ],
   "rewrites": [
-    {
-      "source": "/proxy/open-meteo/forecast",
-      "destination": "https://api.open-meteo.com/v1/forecast"
-    },
-    {
-      "source": "/proxy/open-meteo/geocode",
-      "destination": "https://geocoding-api.open-meteo.com/v1/search"
-    },
-    {
-      "source": "/api/:path*",
-      "destination": "https://skycast-weather-app-6s57.onrender.com/api/:path*"
-    },
-    {
-      "source": "/ws/:path*",
-      "destination": "wss://skycast-weather-app-6s57.onrender.com/ws/:path*"
-    },
     {
       "source": "/(.*)",
       "destination": "/index.html"

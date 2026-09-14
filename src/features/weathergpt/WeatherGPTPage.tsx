@@ -22,6 +22,7 @@ import { MetricBar } from '@/components/weather/MetricBar';
 import { AlertChangeViz, type AlertRecord } from '@/components/weather/AlertChangeViz';
 import { AlertTimeline } from '@/components/weather/AlertTimeline';
 import { ModeSelector } from './ModeSelector';
+import { useDashboard } from '@/lib/query/hooks';
 import {
   getModeConfig, getContextChips, getSuggestedQuestions, getPlaceholder,
   getSelectableModes,
@@ -283,6 +284,8 @@ export default function WeatherGPTPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [agentMode, setAgentMode] = useState<string>('auto');
+
+  const { data: dashboardData } = useDashboard(activeCity);
   
   // Feature #7: Inline Location Switcher modal state
   const [showLocationModal, setShowLocationModal] = useState(false);
@@ -447,7 +450,8 @@ export default function WeatherGPTPage() {
           agent_mode: agentMode,
           context: {
              page: '/weathergpt',
-             active_city: cityToUse
+             active_city: cityToUse,
+             weather_data: dashboardData
           }
         })
       });
@@ -492,7 +496,7 @@ export default function WeatherGPTPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [agentMode, activeCity, sessionId, isLoading]);
+  }, [agentMode, activeCity, sessionId, isLoading, dashboardData, t]);
 
   // Feature #16: Regenerate response for a previous query
   const handleRegenerate = useCallback((index: number) => {
@@ -541,17 +545,12 @@ export default function WeatherGPTPage() {
     });
   };
 
-  // ── Monitoring helpers ─────────────────────────────────────────────────────
+  // ── Monitoring helpers (Mocked for direct frontend use) ─────────────────────────────────────────────────────
 
   const loadAlerts = useCallback(async (sid: string) => {
-    try {
-      const res = await apiFetch(`/api/v1/alerts/history?session_id=${encodeURIComponent(sid)}`);
-      if (res.ok) {
-        const d = await res.json();
-        setAlerts(d.alerts || []);
-        if ((d.alerts || []).length > 0) setShowAlertPanel(true);
-      }
-    } catch { /* silent */ }
+    // Mocked: Alerts require backend polling, returning empty for now.
+    setAlerts([]);
+    setShowAlertPanel(false);
   }, []);
 
   const handleCreateMonitor = useCallback(async (opts: {
@@ -563,53 +562,27 @@ export default function WeatherGPTPage() {
   }) => {
     if (!sessionId) return;
     setMonitoringBusy(true);
-    try {
-      const res = await apiFetch('/api/v1/alerts/monitor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, ...opts }),
-      });
-      if (res.ok) {
-        const d = await res.json();
-        setActiveMonitor({ ...d.monitor, enabled: true });
-        setIsMonitoring(true);
-        await apiFetch('/api/v1/alerts/trigger_check', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId, monitor_id: d.monitor.monitor_id }),
-        });
-      }
-    } catch { /* silent */ } finally {
-      setMonitoringBusy(false);
-    }
+    // Mocked delay
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const mockMonitorId = `mon_${Date.now()}`;
+    setActiveMonitor({ monitor_id: mockMonitorId, ...opts, enabled: true });
+    setIsMonitoring(true);
+    setMonitoringBusy(false);
   }, [sessionId]);
 
   const handleTriggerCheck = useCallback(async () => {
     if (!sessionId) return;
     setMonitoringBusy(true);
-    try {
-      const res = await apiFetch('/api/v1/alerts/trigger_check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId }),
-      });
-      if (res.ok) {
-        await loadAlerts(sessionId);
-      }
-    } catch { /* silent */ } finally {
-      setMonitoringBusy(false);
-    }
+    // Mocked delay
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await loadAlerts(sessionId);
+    setMonitoringBusy(false);
   }, [sessionId, loadAlerts]);
 
   const handleDisableMonitor = useCallback(async () => {
     if (!sessionId || !activeMonitor) return;
-    try {
-      await apiFetch(`/api/v1/alerts/monitor/${activeMonitor.monitor_id}?session_id=${encodeURIComponent(sessionId)}`, {
-        method: 'DELETE',
-      });
-      setActiveMonitor(null);
-      setIsMonitoring(false);
-    } catch { /* silent */ }
+    setActiveMonitor(null);
+    setIsMonitoring(false);
   }, [sessionId, activeMonitor]);
 
   useEffect(() => {
