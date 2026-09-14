@@ -23,7 +23,11 @@ export default function AlertsPage() {
         const res = await apiFetch(`/api/weather/alerts?city=${encodeURIComponent(city)}`);
         if (res.ok) {
           const json = await res.json();
-          setAlerts(json);
+          // Defensive fallback to prevent .map crash
+          const safeAlerts = Array.isArray(json) 
+            ? json 
+            : (Array.isArray(json?.alerts) ? json.alerts : []);
+          setAlerts(safeAlerts);
         }
       } catch (err) {
         console.error("Failed to fetch alerts", err);

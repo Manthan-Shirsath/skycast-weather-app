@@ -81,7 +81,8 @@ type MonitorState = {
 
 // --- Feature #3: Rich Markdown Renderer ---
 function MarkdownRenderer({ content }: { content: string }) {
-  const lines = content.split('\n');
+  const safeContent = typeof content === 'string' ? content : '';
+  const lines = safeContent.split('\n');
   const renderedElements: React.ReactNode[] = [];
   let currentList: string[] = [];
   let currentTable: string[][] = [];
@@ -472,7 +473,7 @@ export default function WeatherGPTPage() {
       const newModelMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        content: data.reply,
+        content: data.reply || '',
         timestamp: data.timestamp ? new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         cards: data.cards,
         sources: data.sources,

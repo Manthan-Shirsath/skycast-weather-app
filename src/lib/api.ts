@@ -17,6 +17,7 @@ export function getApiBaseUrl(): string {
 }
 
 import { fetchDirectDashboard } from './api/openMeteo';
+import { getDemoAlerts, getDemoTrends, getDemoForecastIntelligence } from './demo/demoData';
 
 /**
  * Wrapper around standard fetch to automatically prepend the base API URL.
@@ -34,32 +35,37 @@ export async function apiFetch(endpoint: string, init?: RequestInit): Promise<Re
     normalizedEndpoint = '/' + normalizedEndpoint;
   }
   
-  // Frontend-only routing: intercept calls to backend and return Open-Meteo or dummy data
+  // Frontend-only routing for DEMO MODE: intercept calls to backend and return Open-Meteo or dummy data
+  const isDemoMode = import.meta.env.VITE_DEMO_MODE === 'true';
+
   try {
     const urlObj = new URL(normalizedEndpoint, 'http://localhost');
     const path = urlObj.pathname;
     const searchParams = urlObj.searchParams;
+    const city = searchParams.get('city') || 'Pune';
 
-    if (path.startsWith('/api/weather/dashboard') || path.startsWith('/api/weather/current')) {
-      const city = searchParams.get('city') || 'Pune';
-      const data = await fetchDirectDashboard(city);
-      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
+    if (isDemoMode) {
+      if (path.startsWith('/api/weather/dashboard') || path.startsWith('/api/weather/current')) {
+        const data = await fetchDirectDashboard(city);
+        return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
 
-    if (path.startsWith('/api/weather/alerts') || path.startsWith('/api/v1/alerts/history')) {
-      return new Response(JSON.stringify({ alerts: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
+      if (path.startsWith('/api/weather/alerts') || path.startsWith('/api/v1/alerts/history')) {
+        return new Response(JSON.stringify(getDemoAlerts(city)), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
 
-    if (path.startsWith('/api/trends')) {
-      return new Response(JSON.stringify({ historical_data: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
+      if (path.startsWith('/api/trends')) {
+        const range = searchParams.get('range') || '7d';
+        return new Response(JSON.stringify(getDemoTrends(city, range)), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
 
-    if (path.startsWith('/api/forecast-intelligence')) {
-      return new Response(JSON.stringify({ comparisons: [], models: [], verdict: "Dummy data verdict." }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
+      if (path.startsWith('/api/forecast-intelligence')) {
+        return new Response(JSON.stringify(getDemoForecastIntelligence(city)), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
 
-    if (path.startsWith('/api/map')) {
-       return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (path.startsWith('/api/map') || path.startsWith('/api/radar') || path.startsWith('/api/tiles')) {
+         return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
     }
   } catch (e) {
     console.warn("Error parsing URL in apiFetch mock router:", e);
